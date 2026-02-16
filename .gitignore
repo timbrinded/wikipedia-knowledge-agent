@@ -1,0 +1,10 @@
+# Wikipedia data (too large for git)
+data/
+
+# Experiment results (regenerable, potentially large)
+results/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
