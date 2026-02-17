@@ -34,6 +34,11 @@ claude_extra_args() {
     echo "$args"
 }
 
+# Universal preamble — ensures the agent writes code directly in non-interactive mode
+PREAMBLE_UNIVERSAL="You are running in non-interactive mode. Implement the solution fully by yourself. Do NOT use AskUserQuestion or ask for user input — write all code directly. Do NOT enter plan mode. Just implement the solution and write the files.
+
+"
+
 # Preambles for each condition
 PREAMBLE_CONTROL=""
 PREAMBLE_EXPLICIT="IMPORTANT: You have access to the entirety of English Wikipedia stored locally as plain text files (~6.8M articles). You MUST consult Wikipedia before designing your solution.
@@ -94,15 +99,15 @@ run_problem() {
     local full_prompt
     case "$condition" in
         control)
-            full_prompt="$prompt"
+            full_prompt="${PREAMBLE_UNIVERSAL}${prompt}"
             ;;
         explicit)
-            full_prompt="${PREAMBLE_EXPLICIT}${prompt}"
+            full_prompt="${PREAMBLE_UNIVERSAL}${PREAMBLE_EXPLICIT}${prompt}"
             ;;
         subtle)
             # For subtle: we install the skill but don't mention it in the prompt.
             # The agent can discover the tools via SKILL.md in the workspace.
-            full_prompt="$prompt"
+            full_prompt="${PREAMBLE_UNIVERSAL}${prompt}"
             ;;
     esac
 
@@ -122,7 +127,8 @@ run_problem() {
     # Run Claude Code non-interactively
     # Capture stdout, stderr, and exit code
     cd "$workdir"
-    $CLAUDE_CMD -p "$full_prompt" \
+    CLAUDECODE= $CLAUDE_CMD -p "$full_prompt" \
+        --dangerously-skip-permissions \
         $extra_args \
         --output-format json \
         > "$outdir/output.json" \
