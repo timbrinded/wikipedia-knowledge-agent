@@ -27,7 +27,7 @@ Total experiment cost: **$64.82** across 40 runs (10 problems x 4 conditions).
 
 ### Who wins?
 
-![Judge win rates and per-problem score differences](results/charts/win_rates_and_score_gap.png)
+![Judge win rates and per-problem score differences](docs/charts/win_rates_and_score_gap.png)
 
 | Condition | W | L | T | Avg Score Delta |
 |-----------|:-:|:-:|:-:|:---:|
@@ -41,7 +41,7 @@ Wikipedia access does not produce a reliable, consistent improvement. The effect
 
 ### Where Wikipedia helps (and where it doesn't)
 
-![Per-problem score differences by criterion](results/charts/criterion_heatmaps.png)
+![Per-problem score differences by criterion](docs/charts/criterion_heatmaps.png)
 
 The clearest signal: **Wikipedia helps on problems where algorithm selection matters, and does nothing on mechanical tasks.**
 
@@ -53,19 +53,19 @@ The clearest signal: **Wikipedia helps on problems where algorithm selection mat
 
 ### Judge scores by criterion
 
-![LLM judge scores by criterion](results/charts/judge_scores_by_criterion.png)
+![LLM judge scores by criterion](docs/charts/judge_scores_by_criterion.png)
 
 Scores are averaged across all 10 problems per condition. Explicit shows the most differentiation from control — slightly higher on algorithmic novelty and cross-domain insight, slightly lower on proportionality (tendency to over-engineer when told to research).
 
 ### Time and code volume
 
-![Duration and lines of code per problem](results/charts/duration_and_loc.png)
+![Duration and lines of code per problem](docs/charts/duration_and_loc.png)
 
 Explicit runs take ~2x longer on average (534s vs 288s for control) and produce more code. The research phase adds time. Whether this time investment pays off depends on the problem — for routing it was transformative, for debug-test it was pure overhead.
 
 ### Cost
 
-![Cost breakdown by condition](results/charts/cost_breakdown.png)
+![Cost breakdown by condition](docs/charts/cost_breakdown.png)
 
 Explicit costs 2.5x more than control ($30.15 vs $12.21), driven by wiki-explorer subagent runs on Haiku. The starkest example: race-condition cost $2.50 explicit vs $0.44 control for a tie result. Reflective ($12.83) and subtle ($9.63) are comparable to control — subtle actually costs *less* because it rarely discovered or used the Wikipedia tools.
 
