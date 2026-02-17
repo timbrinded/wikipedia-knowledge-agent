@@ -15,7 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 PROBLEMS_DIR="$SCRIPT_DIR/problems"
 RESULTS_DIR="$PROJECT_DIR/results"
-SKILL_DIR="$PROJECT_DIR/skill"
+PLUGIN_DIR="$PROJECT_DIR"
 DATA_DIR="${WIKIPEDIA_DATA_DIR:-$PROJECT_DIR/data}"
 
 # Configurable
@@ -23,12 +23,31 @@ CLAUDE_CMD="${CLAUDE_CMD:-claude}"
 PROBLEMS="${PROBLEMS:-$(ls "$PROBLEMS_DIR"/*.md | sort)}"
 CONDITIONS="${CONDITIONS:-control explicit subtle}"
 
+# Build extra Claude CLI flags for a given condition
+claude_extra_args() {
+    local condition="$1"
+    local workdir="$2"
+    local args=""
+    if [ "$condition" != "control" ]; then
+        args="--plugin-dir $PLUGIN_DIR"
+    fi
+    echo "$args"
+}
+
 # Preambles for each condition
 PREAMBLE_CONTROL=""
-PREAMBLE_EXPLICIT="You have access to the entirety of English Wikipedia stored locally as plain text files. If it would help you solve this problem, feel free to search for relevant knowledge — biology, mathematics, history, physics, philosophy, or any other domain. Use ripgrep to search:
+PREAMBLE_EXPLICIT="IMPORTANT: You have access to the entirety of English Wikipedia stored locally as plain text files (~6.8M articles). You MUST consult Wikipedia before designing your solution.
+
+Before writing any code:
+1. Use the wiki-lookup skill to research the core concepts of the problem domain (algorithms, data structures, known approaches).
+2. Spawn the wiki-explorer agent to find cross-domain structural analogues — it traverses biology, ecology, economics, physics, mathematics, philosophy, and other fields to find non-obvious patterns that map to your problem. The best solutions often come from insights outside the immediate domain.
+3. Let what you learn from Wikipedia inform your design. Reference specific concepts or analogues in code comments where they influenced your approach.
+
+For quick lookups, search directly:
 - Titles: rg -i \"<query>\" data/index/titles.txt
+- Categories: rg -i \"<query>\" data/index/categories.txt
 - Content: rg -i \"<query>\" data/articles/
-- Read article: find path via rg -m1 \"^<slug>\" data/index/paths.txt | cut -f3, then cat it
+- Read article: find path via rg -m1 \"^<slug>\" data/index/paths.txt | cut -f3, then read it
 
 "
 PREAMBLE_SUBTLE=""
@@ -87,19 +106,14 @@ run_problem() {
             ;;
     esac
 
-    # Set up workspace
-    # For subtle condition: copy skill file into workspace so agent can find it
-    if [ "$condition" = "subtle" ]; then
-        cp "$SKILL_DIR/SKILL.md" "$workdir/.claude/SKILL.md" 2>/dev/null || {
-            mkdir -p "$workdir/.claude"
-            cp "$SKILL_DIR/SKILL.md" "$workdir/.claude/SKILL.md"
-        }
-    fi
-
-    # For explicit/subtle: symlink data directory
+    # Set up workspace — symlink Wikipedia data for non-control conditions
     if [ "$condition" != "control" ]; then
         ln -sfn "$DATA_DIR" "$workdir/data"
     fi
+
+    # Build extra CLI flags (--plugin-dir for non-control)
+    local extra_args
+    extra_args=$(claude_extra_args "$condition" "$workdir")
 
     echo "  RUN  $problem_name/$condition"
     local start_time
@@ -109,6 +123,7 @@ run_problem() {
     # Capture stdout, stderr, and exit code
     cd "$workdir"
     $CLAUDE_CMD -p "$full_prompt" \
+        $extra_args \
         --output-format json \
         > "$outdir/output.json" \
         2> "$outdir/stderr.log" \

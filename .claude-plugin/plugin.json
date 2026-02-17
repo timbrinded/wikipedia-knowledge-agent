@@ -1,0 +1,5 @@
+{
+  "name": "wikipedia-knowledge-agent",
+  "version": "0.1.0",
+  "description": "Lateral knowledge explorer that traverses Wikipedia to find non-obvious cross-domain structural analogues for engineering problems"
+}

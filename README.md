@@ -70,12 +70,21 @@ Same prompts across all conditions. We compare:
 
 ### Prerequisites
 
+- [uv](https://docs.astral.sh/uv/) — Python package & project manager
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI installed
 - [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) installed
 - ~100GB free disk space for Wikipedia dump
 - Anthropic API key (for Claude Code and LLM judge)
 
-### 1. Download Wikipedia
+### 1. Install dependencies
+
+```bash
+uv sync
+```
+
+Creates a `.venv` and installs Python dependencies (WikiExtractor, etc.). All Python execution in this project goes through `uv run`.
+
+### 2. Download Wikipedia
 
 ```bash
 ./setup/download-wikipedia.sh
@@ -83,7 +92,7 @@ Same prompts across all conditions. We compare:
 
 Downloads the latest English Wikipedia dump and extracts it to flat text files (one per article). This takes several hours depending on your connection.
 
-### 2. Build indexes
+### 3. Build indexes
 
 ```bash
 ./setup/build-index.sh
@@ -91,7 +100,7 @@ Downloads the latest English Wikipedia dump and extracts it to flat text files (
 
 Builds greppable title and category indexes for fast lookup.
 
-### 3. Run the experiment
+### 4. Run the experiment
 
 ```bash
 ./tests/run-experiment.sh
@@ -99,7 +108,7 @@ Builds greppable title and category indexes for fast lookup.
 
 Runs all test problems across all three conditions and saves outputs to `results/`.
 
-### 4. Evaluate
+### 5. Evaluate
 
 ```bash
 ./eval/collect-stats.sh    # Quantitative metrics

@@ -4,7 +4,8 @@ data/
 # Experiment results (regenerable, potentially large)
 results/
 
-# Python
+# Python / uv
 __pycache__/
 *.pyc
 .venv/
+uv.lock
