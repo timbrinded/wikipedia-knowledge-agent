@@ -63,7 +63,9 @@ Same prompts across all conditions. We compare:
 ├── eval/
 │   ├── collect-stats.sh           # Quantitative metrics extraction
 │   └── llm-judge.sh               # LLM-as-judge evaluation
-└── results/                       # Experiment outputs (gitignored)
+└── results/                       # Experiment outputs
+    ├── visualize.ipynb            # Results charts & analysis notebook
+    └── stats.tsv                  # Quantitative metrics per run
 ```
 
 ## Setup
@@ -114,6 +116,14 @@ Runs all test problems across all three conditions and saves outputs to `results
 ./eval/collect-stats.sh    # Quantitative metrics
 ./eval/llm-judge.sh        # LLM-as-judge comparison
 ```
+
+### 6. Visualise results
+
+```bash
+uv run jupyter lab results/visualize.ipynb
+```
+
+Opens a notebook with charts covering duration, token usage, permission denials, cost breakdown, and a summary heatmap across all conditions and problem types.
 
 ## How Wikipedia Access Works
 
