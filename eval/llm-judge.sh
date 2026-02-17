@@ -42,6 +42,8 @@ CALIBRATION: If both solutions use the same core algorithm and produce equivalen
 
 5. **Cross-domain structural insight** (weight: 1x) — Does the code'\''s *actual behavior* (not comments, not variable names) embody a pattern drawn from outside software engineering? Example: a load balancer that implements biological quorum sensing as its consensus mechanism scores high. A load balancer with a comment saying "inspired by quorum sensing" but using standard round-robin scores 1. The insight must be *structural*, not *decorative*.
 
+6. **Proportionality** (weight: 1x) — Is the solution'\''s complexity proportionate to the problem? Deduct for over-engineering (complex architecture for a simple problem — e.g., microservice patterns for a single-file utility) or under-engineering (naive approach to a problem with known pitfalls — e.g., no error handling for network I/O). The best solutions use exactly as much complexity as the problem demands — no more, no less.
+
 ## Output Format (strict JSON)
 
 {
@@ -51,7 +53,8 @@ CALIBRATION: If both solutions use the same core algorithm and produce equivalen
     "robustness": N,
     "algorithmic_novelty": N,
     "cross_domain": N,
-    "total": 3*correctness + 2*design + 2*robustness + 2*algorithmic_novelty + 1*cross_domain,
+    "proportionality": N,
+    "total": 3*correctness + 2*design + 2*robustness + 2*algorithmic_novelty + 1*cross_domain + 1*proportionality,
     "notes": "brief explanation"
   },
   "solution_b": {
@@ -60,7 +63,8 @@ CALIBRATION: If both solutions use the same core algorithm and produce equivalen
     "robustness": N,
     "algorithmic_novelty": N,
     "cross_domain": N,
-    "total": 3*correctness + 2*design + 2*robustness + 2*algorithmic_novelty + 1*cross_domain,
+    "proportionality": N,
+    "total": 3*correctness + 2*design + 2*robustness + 2*algorithmic_novelty + 1*cross_domain + 1*proportionality,
     "notes": "brief explanation"
   },
   "preferred": "a" or "b" or "tie",
@@ -73,7 +77,7 @@ extract_code() {
     local workspace="$1"
     local code=""
     if [ -d "$workspace" ]; then
-        code=$(find "$workspace" -name "*.py" -not -path "*/data/*" -not -path "*/.claude/*" \
+        code=$(find "$workspace" -name "*.py" -not -path "*/data/*" -not -path "*/.claude/*" -not -path "*/.venv/*" -not -path "*/venv/*" -not -path "*/node_modules/*" \
             -exec cat {} + 2>/dev/null \
             | python3 "$SCRIPT_DIR/strip_comments.py")
     fi
@@ -87,7 +91,7 @@ mkdir -p "$EVAL_DIR"
 for problem_dir in "$RESULTS_DIR"/*/; do
     problem=$(basename "$problem_dir")
     [ -d "$problem_dir" ] || continue
-    [[ "$problem" == "evaluations" || "$problem" == "stats.tsv" ]] && continue
+    [[ "$problem" == "evaluations" || "$problem" == "stats.tsv" || "$problem" == "visualize.ipynb" ]] && continue
 
     problem_file="$PROJECT_DIR/tests/problems/${problem}.md"
     [ -f "$problem_file" ] || continue
@@ -105,7 +109,9 @@ for problem_dir in "$RESULTS_DIR"/*/; do
     control_code=$(extract_code "$problem_dir/control/workspace")
 
     # Compare control against each wiki condition
-    for condition in explicit subtle; do
+    for condition_dir in "$problem_dir"/*/; do
+        condition=$(basename "$condition_dir")
+        [ "$condition" = "control" ] && continue
         [ -f "$problem_dir/$condition/output.json" ] || continue
 
         wiki_code=$(extract_code "$problem_dir/$condition/workspace")
@@ -128,6 +134,12 @@ for problem_dir in "$RESULTS_DIR"/*/; do
         prompt="${prompt//%SOLUTION_B_CODE%/$sol_b_code}"
 
         eval_file="$EVAL_DIR/${problem}_${condition}.json"
+
+        # Skip if already evaluated (non-empty file). Set FORCE=1 to re-evaluate.
+        if [ "${FORCE:-}" != "1" ] && [ -f "$eval_file" ] && [ -s "$eval_file" ]; then
+            echo "  SKIP $problem/$condition (already evaluated)"
+            continue
+        fi
 
         echo "  JUDGE $problem: control vs $condition"
         CLAUDECODE= $CLAUDE_CMD -p "$prompt" --output-format json > "$eval_file" 2>/dev/null || true

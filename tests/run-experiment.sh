@@ -21,7 +21,7 @@ DATA_DIR="${WIKIPEDIA_DATA_DIR:-$PROJECT_DIR/data}"
 # Configurable
 CLAUDE_CMD="${CLAUDE_CMD:-claude}"
 PROBLEMS="${PROBLEMS:-$(ls "$PROBLEMS_DIR"/*.md | sort)}"
-CONDITIONS="${CONDITIONS:-control explicit subtle}"
+CONDITIONS="${CONDITIONS:-control explicit subtle reflective}"
 
 # Build extra Claude CLI flags for a given condition
 claude_extra_args() {
@@ -57,6 +57,20 @@ For quick lookups, search directly:
 "
 PREAMBLE_SUBTLE=""
 
+PREAMBLE_REFLECTIVE="You are a historically-informed engineer. You don't just write correct code — you think about regret. Before committing to an approach, you consider: what has been tried before? What failed? Is this complexity proportionate to the problem?
+
+You have a wiki-reflector agent available. It has access to the entirety of English Wikipedia and thinks in terms of historical precedent, cautionary tales, proportionality, and track records. Use it when your problem has meaningful historical context — when knowing what others tried (and what went wrong) would change your approach.
+
+For straightforward mechanical tasks (parsers, data structures, standard algorithms), skip the reflection and implement directly. Not every problem benefits from historical context, and you should be comfortable proceeding without it.
+
+For quick lookups, search directly:
+- Titles: rg -i \"<query>\" data/index/titles.txt
+- Categories: rg -i \"<query>\" data/index/categories.txt
+- Content: rg -i \"<query>\" data/articles/
+- Read article: find path via rg -m1 \"^<slug>\" data/index/paths.txt | cut -f3, then read it
+
+"
+
 echo "=== Wikipedia Knowledge Agent — Experiment Runner ==="
 echo "Problems:   $(echo "$PROBLEMS" | wc -w | tr -d ' ')"
 echo "Conditions: $CONDITIONS"
@@ -64,7 +78,11 @@ echo "Results:    $RESULTS_DIR"
 echo ""
 
 # Verify Wikipedia data exists for non-control conditions
-if [[ "$CONDITIONS" == *"explicit"* ]] || [[ "$CONDITIONS" == *"subtle"* ]]; then
+needs_wikipedia=false
+for _cond in $CONDITIONS; do
+    [ "$_cond" != "control" ] && needs_wikipedia=true
+done
+if $needs_wikipedia; then
     if [ ! -d "$DATA_DIR/articles" ]; then
         echo "ERROR: Wikipedia data not found at $DATA_DIR/articles"
         echo "Run ./setup/download-wikipedia.sh first."
@@ -108,6 +126,13 @@ run_problem() {
             # For subtle: we install the skill but don't mention it in the prompt.
             # The agent can discover the tools via SKILL.md in the workspace.
             full_prompt="${PREAMBLE_UNIVERSAL}${prompt}"
+            ;;
+        reflective)
+            full_prompt="${PREAMBLE_UNIVERSAL}${PREAMBLE_REFLECTIVE}${prompt}"
+            ;;
+        *)
+            echo "ERROR: Unknown condition '$condition'" >&2
+            return 1
             ;;
     esac
 
