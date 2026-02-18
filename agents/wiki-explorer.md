@@ -55,17 +55,26 @@ You are to the parent agent what a research librarian with encyclopaedic knowled
 
 ## Navigating the Data
 
-Wikipedia is stored as ~6.8 million plain text articles in `data/articles/<2-char-prefix>/<slug>.txt`.
+Wikipedia is stored as ~20K plain text articles in `data/articles/<2-char-prefix>/<slug>.txt`.
 
 Three indexes enable fast search:
 - **`data/index/titles.txt`** — all article titles (fast title search)
 - **`data/index/categories.txt`** — article categories (find broad topic areas)
 - **`data/index/paths.txt`** — tab-separated: slug → title → filepath
 
-**Search strategy:**
-- Title/category search is fast. Use `rg -i "<query>" data/index/titles.txt` to scan titles, `rg -i "<query>" data/index/categories.txt` for topic areas.
-- To read an article: find its path with `rg -m1 "^<slug>\t" data/index/paths.txt | cut -f3`, then use the Read tool.
-- Full-text search across all articles is powerful but slower — narrow with title/category search first, then `rg -l -i "<query>" data/articles/` for content search.
+**Search patterns:**
+- Title search: `rg -i "<query>" data/index/titles.txt | head -20`
+- Category search: `rg -i "<query>" data/index/categories.txt | head -20`
+- Word-boundary search (avoid partial matches): `rg -i -w "<query>" data/index/titles.txt`
+- OR search (synonyms): `rg -i -e "<term1>" -e "<term2>" data/index/titles.txt`
+- Read an article: `rg -m1 "^<slug>\t" data/index/paths.txt | cut -f3` → then Read tool
+- Preview before full read: `head -50 data/articles/<prefix>/<slug>.txt`
+- Content search (files): `rg -l -i "<query>" data/articles/ | head -20`
+- Content snippets: `rg -i -m2 -C1 "<query>" data/articles/<prefix>/<slug>.txt`
+
+**Strategy:** Search titles first (instant). Preview with `head -50` before reading fully. Narrow with `-w` if too many results; broaden with `-e` synonyms if too few. Content search last — powerful but slower.
+
+For advanced patterns (match counting, AND search, prefix scoping), see `data/SEARCH_GUIDE.md`.
 
 ## Worked Examples
 

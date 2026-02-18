@@ -48,7 +48,6 @@ else
         "$DUMP_FILE" \
         --output "$EXTRACTED_DIR" \
         --bytes 0 \
-        --no-templates \
         --processes "$(nproc)" \
         --quiet
     echo "      Extraction complete."

@@ -3,13 +3,15 @@ set -euo pipefail
 
 # Run the Wikipedia Knowledge Agent experiment.
 #
-# Executes each test problem under three conditions:
-#   1. control  — no Wikipedia access
-#   2. explicit — Wikipedia access + told to use it
-#   3. subtle   — Wikipedia access available but not highlighted
+# Executes each test problem under multiple conditions:
+#   Original:  control, explicit, subtle, reflective
+#   Wave 2:    flaneur, consilience, biomimetic, contrarian
 #
 # Uses Claude Code in non-interactive mode (-p flag).
 # Outputs saved to results/<problem>/<condition>/
+#
+# Run specific conditions:  CONDITIONS="flaneur consilience" ./tests/run-experiment.sh
+# Run specific problems:    PROBLEMS="tests/problems/01-load-balancer.md" ./tests/run-experiment.sh
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -39,20 +41,29 @@ PREAMBLE_UNIVERSAL="You are running in non-interactive mode. Implement the solut
 
 "
 
+# Shared search instructions — used by multiple preambles below
+WIKI_SEARCH_INSTRUCTIONS="For quick lookups, search directly:
+- Titles: rg -i \"<query>\" data/index/titles.txt | head -20
+- Categories: rg -i \"<query>\" data/index/categories.txt | head -20
+- Word-boundary (avoid partial matches): rg -i -w \"<query>\" data/index/titles.txt
+- OR search (synonyms): rg -i -e \"<term1>\" -e \"<term2>\" data/index/titles.txt
+- Read article: find path via rg -m1 \"^<slug>\t\" data/index/paths.txt | cut -f3, then read it
+- Preview article: head -50 data/articles/<prefix>/<slug>.txt
+- Content search (files): rg -l -i \"<query>\" data/articles/ | head -20
+- Content snippets: rg -i -m2 -C1 \"<query>\" data/articles/<prefix>/<slug>.txt
+
+Strategy: search titles first (instant), preview with head -50 before reading fully, narrow with -w if too many results, broaden with -e synonyms if too few."
+
 # Preambles for each condition
 PREAMBLE_CONTROL=""
-PREAMBLE_EXPLICIT="IMPORTANT: You have access to the entirety of English Wikipedia stored locally as plain text files (~6.8M articles). You MUST consult Wikipedia before designing your solution.
+PREAMBLE_EXPLICIT="IMPORTANT: You have access to the entirety of English Wikipedia stored locally as plain text files (~20K articles). You MUST consult Wikipedia before designing your solution.
 
 Before writing any code:
 1. Use the wiki-lookup skill to research the core concepts of the problem domain (algorithms, data structures, known approaches).
 2. Spawn the wiki-explorer agent to find cross-domain structural analogues — it traverses biology, ecology, economics, physics, mathematics, philosophy, and other fields to find non-obvious patterns that map to your problem. The best solutions often come from insights outside the immediate domain.
 3. Let what you learn from Wikipedia inform your design. Reference specific concepts or analogues in code comments where they influenced your approach.
 
-For quick lookups, search directly:
-- Titles: rg -i \"<query>\" data/index/titles.txt
-- Categories: rg -i \"<query>\" data/index/categories.txt
-- Content: rg -i \"<query>\" data/articles/
-- Read article: find path via rg -m1 \"^<slug>\" data/index/paths.txt | cut -f3, then read it
+$WIKI_SEARCH_INSTRUCTIONS
 
 "
 PREAMBLE_SUBTLE=""
@@ -63,11 +74,71 @@ You have a wiki-reflector agent available. It has access to the entirety of Engl
 
 For straightforward mechanical tasks (parsers, data structures, standard algorithms), skip the reflection and implement directly. Not every problem benefits from historical context, and you should be comfortable proceeding without it.
 
-For quick lookups, search directly:
-- Titles: rg -i \"<query>\" data/index/titles.txt
-- Categories: rg -i \"<query>\" data/index/categories.txt
-- Content: rg -i \"<query>\" data/articles/
-- Read article: find path via rg -m1 \"^<slug>\" data/index/paths.txt | cut -f3, then read it
+$WIKI_SEARCH_INSTRUCTIONS
+
+"
+
+# --- Wave 2 conditions ---
+
+DENY_ALL_OTHERS="STRICT RULE: Do NOT spawn or use any wiki agent other than the one specified above. Specifically, do NOT use: wiki-explorer, wiki-reflector, wiki-flaneur, wiki-consilience, wiki-biomimetic, or wiki-contrarian — unless it is the one explicitly named in your instructions."
+
+PREAMBLE_FLANEUR="You have access to the entirety of English Wikipedia stored locally as plain text files (~20K articles). Before you start engineering, you MUST let the wiki-flaneur agent take a random walk through Wikipedia.
+
+The flaneur does not search for solutions. It wanders — picking random articles, following curiosity, reading deeply — and only AFTER the walk does it reflect on what might connect to your problem. The best insights come from exposure you didn't plan.
+
+Before writing any code:
+1. Spawn the wiki-flaneur agent with the problem statement. Let it walk.
+2. Read what it brings back. Let the texture settle.
+3. Then — and only then — design and implement your solution. Let whatever resonated from the walk influence your design, even if the connection is loose.
+
+Use ONLY the wiki-flaneur agent. $DENY_ALL_OTHERS
+
+$WIKI_SEARCH_INSTRUCTIONS
+
+"
+
+PREAMBLE_CONSILIENCE="You have access to the entirety of English Wikipedia stored locally as plain text files (~20K articles). You MUST search for convergent evidence before designing your solution.
+
+You have a wiki-consilience agent. It hunts for the same structural pattern appearing independently across 3+ unrelated domains. One analogy is anecdote. Two is suggestive. Three independent convergences is signal — evidence that a pattern is fundamental, not accidental.
+
+Before writing any code:
+1. Spawn the wiki-consilience agent with the problem statement.
+2. If it finds strong consilience (3+ independent domains converging on the same mechanism), treat that as strong evidence the pattern is fundamental — build on it.
+3. If consilience is weak, proceed with standard engineering. Not every problem has a deep structural pattern.
+
+Use ONLY the wiki-consilience agent. $DENY_ALL_OTHERS
+
+$WIKI_SEARCH_INSTRUCTIONS
+
+"
+
+PREAMBLE_BIOMIMETIC="You have access to the entirety of English Wikipedia stored locally as plain text files (~20K articles). You MUST consult biology and ecology before designing your solution.
+
+You have a wiki-biomimetic agent. It looks ONLY at biological and ecological systems — evolution, neuroscience, immunology, ethology, botany, mycology — to find how nature solves the same structural problem. Four billion years of evolution has produced solutions to resource allocation, distributed coordination, fault tolerance, and optimization that often outperform human engineering.
+
+Before writing any code:
+1. Spawn the wiki-biomimetic agent with the problem statement.
+2. If it finds a biological mechanism that translates well to code, implement it. Not as a metaphor — as an actual algorithm or architecture derived from the biological mechanism.
+3. If the biological lens doesn't improve on standard approaches, proceed with standard engineering. The agent will tell you honestly.
+
+Use ONLY the wiki-biomimetic agent. $DENY_ALL_OTHERS
+
+$WIKI_SEARCH_INSTRUCTIONS
+
+"
+
+PREAMBLE_CONTRARIAN="You have access to the entirety of English Wikipedia stored locally as plain text files (~20K articles). Before committing to your first instinct, you MUST stress-test it.
+
+You have a wiki-contrarian agent. It is adversarial — it actively searches for evidence that the obvious approach is WRONG. Historical failures, known limitations, documented anti-patterns, cases where the standard solution lost. Its job is to find reasons NOT to do the thing you were about to do.
+
+Before writing any code:
+1. Identify your default approach — the thing you'd build without thinking twice.
+2. Spawn the wiki-contrarian agent to stress-test that default.
+3. If it finds compelling evidence against your default, reconsider. If the default survives scrutiny, proceed with higher confidence.
+
+Use ONLY the wiki-contrarian agent. $DENY_ALL_OTHERS
+
+$WIKI_SEARCH_INSTRUCTIONS
 
 "
 
@@ -129,6 +200,18 @@ run_problem() {
             ;;
         reflective)
             full_prompt="${PREAMBLE_UNIVERSAL}${PREAMBLE_REFLECTIVE}${prompt}"
+            ;;
+        flaneur)
+            full_prompt="${PREAMBLE_UNIVERSAL}${PREAMBLE_FLANEUR}${prompt}"
+            ;;
+        consilience)
+            full_prompt="${PREAMBLE_UNIVERSAL}${PREAMBLE_CONSILIENCE}${prompt}"
+            ;;
+        biomimetic)
+            full_prompt="${PREAMBLE_UNIVERSAL}${PREAMBLE_BIOMIMETIC}${prompt}"
+            ;;
+        contrarian)
+            full_prompt="${PREAMBLE_UNIVERSAL}${PREAMBLE_CONTRARIAN}${prompt}"
             ;;
         *)
             echo "ERROR: Unknown condition '$condition'" >&2
