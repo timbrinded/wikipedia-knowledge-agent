@@ -251,14 +251,15 @@ $(cat "$contract_dir/README.md")"
 
     # Run Claude Code non-interactively
     # Capture stdout, stderr, and exit code
-    cd "$workdir"
+    # Use subshell to avoid polluting cwd for subsequent iterations
+    (cd "$workdir" && \
     CLAUDECODE= $CLAUDE_CMD -p "$full_prompt" \
         --dangerously-skip-permissions \
         $extra_args \
         --output-format json \
         > "$outdir/output.json" \
         2> "$outdir/stderr.log" \
-        || true
+        || true)
 
     local end_time
     end_time=$(date +%s)
