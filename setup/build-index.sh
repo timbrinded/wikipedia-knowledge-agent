@@ -4,14 +4,23 @@ set -euo pipefail
 # Build greppable indexes from extracted Wikipedia articles.
 #
 # Creates:
-#   data/index/titles.txt      — one line per article: "slug<TAB>Original Title"
-#   data/index/categories.txt  — one line per: "slug<TAB>Category Name"
+#   data/index/titles.txt      — "slug<TAB>Original Title"
+#   data/index/paths.txt       — "slug<TAB>Original Title<TAB>filepath"
+#   data/index/categories.txt  — "Category Name<TAB>count"
+#
+# Designed for millions of articles. Uses Python readline (no subprocess per
+# file) for title extraction and streaming XML parse for categories.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 DATA_DIR="${WIKIPEDIA_DATA_DIR:-$PROJECT_DIR/data}"
 ARTICLES_DIR="$DATA_DIR/articles"
+DUMP_DIR="$DATA_DIR/dump"
+DUMP_FILE="$DUMP_DIR/enwiki-latest-pages-articles.xml.bz2"
 INDEX_DIR="$DATA_DIR/index"
+
+# Keep sort temp files off RAM-backed tmpfs — use disk-backed /var/tmp
+export TMPDIR=/var/tmp
 
 echo "=== Building search indexes ==="
 
@@ -23,49 +32,67 @@ fi
 
 mkdir -p "$INDEX_DIR"
 
-# --- Title index ---
-echo "[1/2] Building title index..."
-TITLES_FILE="$INDEX_DIR/titles.txt"
+ARTICLE_COUNT=$(find "$ARTICLES_DIR" -name "*.txt" | wc -l)
+echo "Articles found: $ARTICLE_COUNT"
+echo ""
 
-find "$ARTICLES_DIR" -name "*.txt" -print0 | \
-    xargs -0 -P "$(nproc)" -I{} head -1 {} | \
-    sed 's/^# //' | \
-    sort > "$TITLES_FILE.tmp"
+# --- Step 1: Title + Path index (single pass, no subprocess per file) ---
+echo "[1/2] Building title and path indexes..."
 
-# Also build a slug→path mapping for fast article lookup
-echo "      Building path index..."
-find "$ARTICLES_DIR" -name "*.txt" | while read -r filepath; do
-    title=$(head -1 "$filepath" | sed 's/^# //')
-    slug=$(basename "$filepath" .txt)
-    echo "${slug}	${title}	${filepath}"
-done | sort > "$INDEX_DIR/paths.txt"
+find "$ARTICLES_DIR" -name "*.txt" | python3 -c "
+import sys, os
 
-# Simple title-only index for fast grep
-awk -F'\t' '{print $1 "\t" $2}' "$INDEX_DIR/paths.txt" > "$TITLES_FILE"
-rm -f "$TITLES_FILE.tmp"
+count = 0
+for line in sys.stdin:
+    filepath = line.rstrip('\n')
+    slug = os.path.basename(filepath)[:-4]  # strip .txt
+    try:
+        with open(filepath) as f:
+            title = f.readline().strip().lstrip('# ')
+    except (IOError, OSError):
+        continue
+    sys.stdout.write(f'{slug}\t{title}\t{filepath}\n')
+    count += 1
+    if count % 1_000_000 == 0:
+        print(f'      {count:,} articles processed...', file=sys.stderr)
+print(f'      {count:,} articles total.', file=sys.stderr)
+" | LC_ALL=C sort > "$INDEX_DIR/paths.txt"
 
-TITLE_COUNT=$(wc -l < "$TITLES_FILE")
+# Derive titles-only index from paths (fast awk, no re-read)
+awk -F'\t' '{print $1 "\t" $2}' "$INDEX_DIR/paths.txt" > "$INDEX_DIR/titles.txt"
+
+TITLE_COUNT=$(wc -l < "$INDEX_DIR/titles.txt")
 echo "      $TITLE_COUNT titles indexed."
+echo ""
 
-# --- Category index ---
-echo "[2/2] Building category index..."
-CATEGORIES_FILE="$INDEX_DIR/categories.txt"
+# --- Step 2: Category index (from raw XML dump) ---
+echo "[2/2] Building category index from XML dump..."
 
-# Extract category references from article content
-# Wikipedia articles mention categories inline as [[Category:Name]]
-find "$ARTICLES_DIR" -name "*.txt" -print0 | \
-    xargs -0 -P "$(nproc)" grep -h -oP '\[\[Category:([^\]]+)\]\]' 2>/dev/null | \
-    sed 's/\[\[Category://;s/\]\]//' | \
-    sort | uniq -c | sort -rn | \
-    awk '{$1=$1; count=$1; $1=""; print substr($0,2) "\t" count}' > "$CATEGORIES_FILE"
+if [ ! -f "$DUMP_FILE" ]; then
+    echo "Warning: Dump file not found: $DUMP_FILE"
+    echo "Skipping category index. Re-run after downloading the dump."
+    CAT_COUNT=0
+else
+    # Prefer lbzip2 (parallel) over bzip2 (single-threaded) for decompression
+    if command -v lbzip2 &>/dev/null; then
+        BZCAT="lbzip2 -dc"
+    else
+        BZCAT="bzip2 -dc"
+    fi
 
-CAT_COUNT=$(wc -l < "$CATEGORIES_FILE")
+    $BZCAT "$DUMP_FILE" | python3 "$PROJECT_DIR/scripts/build_categories.py" | \
+        cut -f2 | LC_ALL=C sort | uniq -c | LC_ALL=C sort -rn | \
+        awk '{$1=$1; count=$1; $1=""; print substr($0,2) "\t" count}' \
+        > "$INDEX_DIR/categories.txt"
+
+    CAT_COUNT=$(wc -l < "$INDEX_DIR/categories.txt")
+fi
 echo "      $CAT_COUNT unique categories indexed."
 
 echo ""
 echo "=== Indexes built ==="
-echo "  Titles:     $TITLES_FILE ($TITLE_COUNT entries)"
-echo "  Categories: $CATEGORIES_FILE ($CAT_COUNT entries)"
+echo "  Titles:     $INDEX_DIR/titles.txt ($TITLE_COUNT entries)"
+echo "  Categories: $INDEX_DIR/categories.txt ($CAT_COUNT entries)"
 echo "  Paths:      $INDEX_DIR/paths.txt"
 echo ""
-echo "Ready for experiments. See skill/SKILL.md for agent usage."
+echo "Ready for experiments."

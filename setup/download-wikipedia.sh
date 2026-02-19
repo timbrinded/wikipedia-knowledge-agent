@@ -47,7 +47,7 @@ else
     uv run wikiextractor \
         "$DUMP_FILE" \
         --output "$EXTRACTED_DIR" \
-        --bytes 0 \
+        --json \
         --processes "$(nproc)" \
         --quiet
     echo "      Extraction complete."

@@ -23,7 +23,7 @@ DATA_DIR="${WIKIPEDIA_DATA_DIR:-$PROJECT_DIR/data}"
 # Configurable
 CLAUDE_CMD="${CLAUDE_CMD:-claude}"
 PROBLEMS="${PROBLEMS:-$(ls "$PROBLEMS_DIR"/*.md | sort)}"
-CONDITIONS="${CONDITIONS:-control explicit subtle reflective}"
+CONDITIONS="${CONDITIONS:-control explicit subtle reflective flaneur consilience biomimetic contrarian}"
 
 # Build extra Claude CLI flags for a given condition
 claude_extra_args() {
@@ -180,9 +180,26 @@ run_problem() {
 
     mkdir -p "$workdir"
 
+    # Copy contract types into workspace if a contract exists for this problem
+    local contract_dir="$SCRIPT_DIR/contracts/${problem_name//-/_}"
+    if [ -d "$contract_dir" ]; then
+        # Derive module dir from problem name: "01-load-balancer" -> "load_balancer"
+        local module_dir
+        module_dir=$(echo "$problem_name" | sed 's/^[0-9]*-//' | tr '-' '_')
+        mkdir -p "$workdir/$module_dir"
+        cp "$contract_dir/types.py" "$workdir/$module_dir/types.py"
+    fi
+
     # Read the problem prompt
     local prompt
     prompt=$(cat "$problem_file")
+
+    # Append contract instructions if available
+    if [ -f "$contract_dir/README.md" ]; then
+        prompt="${prompt}
+
+$(cat "$contract_dir/README.md")"
+    fi
 
     # Build the full prompt based on condition
     local full_prompt

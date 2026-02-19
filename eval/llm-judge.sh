@@ -77,7 +77,7 @@ extract_code() {
     local workspace="$1"
     local code=""
     if [ -d "$workspace" ]; then
-        code=$(find "$workspace" -name "*.py" -not -path "*/data/*" -not -path "*/.claude/*" -not -path "*/.venv/*" -not -path "*/venv/*" -not -path "*/node_modules/*" \
+        code=$(find "$workspace" -name "*.py" -not -name "types.py" -not -path "*/data/*" -not -path "*/.claude/*" -not -path "*/.venv/*" -not -path "*/venv/*" -not -path "*/node_modules/*" \
             -exec cat {} + 2>/dev/null \
             | python3 "$SCRIPT_DIR/strip_comments.py")
     fi

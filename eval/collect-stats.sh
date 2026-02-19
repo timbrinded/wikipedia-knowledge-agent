@@ -58,7 +58,7 @@ for problem_dir in "$RESULTS_DIR"/*/; do
         # Count lines of code in workspace
         workspace="$condition_dir/workspace"
         if [ -d "$workspace" ]; then
-            lines_of_code=$(find "$workspace" -name "*.py" -not -path "*/data/*" -not -path "*/.claude/*" -not -path "*/.venv/*" -not -path "*/venv/*" -not -path "*/node_modules/*" -exec cat {} + 2>/dev/null | wc -l || echo "0")
+            lines_of_code=$(find "$workspace" -name "*.py" -not -name "types.py" -not -path "*/data/*" -not -path "*/.claude/*" -not -path "*/.venv/*" -not -path "*/venv/*" -not -path "*/node_modules/*" -exec cat {} + 2>/dev/null | wc -l || echo "0")
         else
             lines_of_code=0
         fi
