@@ -50,6 +50,11 @@
 % ── Subfigures ───────────────────────────────────────────
 \usepackage{subcaption}
 
+% ── Float control ──────────────────────────────────────────
+\usepackage{float}
+\usepackage{placeins}
+\usepackage{flushend}
+
 % ── Compact lists ────────────────────────────────────────
 \usepackage{enumitem}
 \setlist{nosep,leftmargin=*}
@@ -241,12 +246,13 @@ architecturally ambitious solution.
     xlabel={Benchmark Score},
     xmin=70, xmax=98,
     symbolic y coords={%
-      consilience,control,biomimetic,reflective,%
-      flaneur,subtle,explicit,contrarian},
-    ytick={consilience,control,biomimetic,reflective,%
-      flaneur,subtle,explicit,contrarian},
-    yticklabels={consilience,\textbf{control},biomimetic,reflective,%
-      flaneur,subtle,explicit,contrarian},
+      consil.,control,biomim.,reflect.,%
+      flaneur,subtle,explicit,contr.},
+    ytick={consil.,control,biomim.,reflect.,%
+      flaneur,subtle,explicit,contr.},
+    yticklabels={consil.,\textbf{control},biomim.,reflect.,%
+      flaneur,subtle,explicit,contr.},
+    yticklabel style={font=\small},
     ytick style={draw=none},
     bar width=7pt,
     enlarge y limits=0.12,
@@ -254,18 +260,18 @@ architecturally ambitious solution.
     grid style={dotted,gray!40},
     nodes near coords,
     nodes near coords align={horizontal},
-    every node near coord/.append style={font=\scriptsize},
+    every node near coord/.append style={font=\tiny},
 ]
 \addplot[fill=wikiorange!70, draw=wikiorange]
   coordinates {
-    (76.2,consilience)
+    (76.2,consil.)
     (84.7,control)
-    (85.5,biomimetic)
-    (85.9,reflective)
+    (85.5,biomim.)
+    (85.9,reflect.)
     (89.1,flaneur)
     (90.1,subtle)
     (91.1,explicit)
-    (92.9,contrarian)
+    (92.9,contr.)
   };
 \end{axis}
 \end{tikzpicture}
@@ -283,9 +289,10 @@ architecturally ambitious solution.
     xlabel={Judge Margin vs.\ Control},
     xmin=-5, xmax=25,
     symbolic y coords={%
-      subtle,flaneur,reflective,biomimetic,%
-      explicit,consilience,contrarian},
+      subtle,flaneur,reflect.,biomim.,%
+      explicit,consil.,contr.},
     ytick=data,
+    yticklabel style={font=\small},
     ytick style={draw=none},
     bar width=7pt,
     enlarge y limits=0.13,
@@ -293,7 +300,7 @@ architecturally ambitious solution.
     grid style={dotted,gray!40},
     nodes near coords,
     nodes near coords align={horizontal},
-    every node near coord/.append style={font=\scriptsize},
+    every node near coord/.append style={font=\tiny},
     extra x ticks={0},
     extra x tick style={grid=major, grid style={black,thick,dashed}},
 ]
@@ -301,11 +308,11 @@ architecturally ambitious solution.
   coordinates {
     (-2,subtle)
     (0,flaneur)
-    (5,reflective)
-    (7,biomimetic)
+    (5,reflect.)
+    (7,biomim.)
     (14,explicit)
-    (14,consilience)
-    (20,contrarian)
+    (14,consil.)
+    (20,contr.)
   };
 \end{axis}
 \end{tikzpicture}
@@ -415,11 +422,68 @@ nearly matching control's efficiency.  Biomimetic is the least
 efficient (\$2.98 for 85.5 points).  Table~\ref{tab:efficiency} shows the
 full breakdown.
 
-\begin{figure}[ht]
+\begin{table}[H]
+\centering\small
+\caption{Cost, efficiency, and code metrics.  Score/\$ = benchmark score
+per dollar of API cost.}
+\label{tab:efficiency}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+\textbf{Condition} & \textbf{Time} & \textbf{Cost}
+  & \textbf{LOC} & \textbf{Score/\$} \\
+\midrule
+control     & 4:03  & \$0.85 & 471 & 99.7 \\
+subtle      & 4:04  & \$0.92 & 378 & 97.9 \\
+reflective  & 5:36  & \$1.42 & 466 & 60.5 \\
+flaneur     & 7:49  & \$2.10 & 548 & 42.4 \\
+contrarian  & 9:21  & \$2.23 & 539 & 41.7 \\
+consilience & 9:17  & \$2.81 & 531 & 27.1 \\
+explicit    & 5:05  & \$2.92 & 534 & 31.2 \\
+biomimetic  & 12:07 & \$2.98 & 444 & 28.7 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ── 3.6  Wikipedia Usage ─────────────────────────────────
+\subsection{Wikipedia Usage}
+
+Table~\ref{tab:wiki} shows research effort versus actual knowledge
+extraction.  Explicit spent the most subagent tokens (2,894) but
+referenced zero Wikipedia articles in its final code.  Contrarian read
+the fewest articles among active conditions (2) but extracted the most
+actionable insight---power-of-two-choices routing became its core
+algorithm and the Mars Pathfinder case motivated its asymmetric EWMA.
+
+\begin{table}[H]
+\centering\small
+\caption{Wikipedia usage per condition.  ``Tokens'' = subagent output
+tokens; ``Articles'' = Wikipedia articles visibly referenced in the final
+implementation.}
+\label{tab:wiki}
+\begin{tabular}{@{}lrrp{2.8cm}@{}}
+\toprule
+\textbf{Cond.} & \textbf{Tokens} & \textbf{Art.}
+  & \textbf{Key Sources} \\
+\midrule
+control     & 108   & 0 & --- \\
+subtle      & 108   & 0 & Never found tools \\
+explicit    & 2,894 & 0 & Research didn't transfer \\
+reflective  & 1,456 & 4 & Gmail outage, NE blackout \\
+flaneur     & 1,707 & 6 & Monocoque, Deperdussin \\
+consilience & 2,238 & 6 & UFLS, ISR, triage \\
+biomimetic  & 1,980 & 5 & Baroreceptors, ACO \\
+contrarian  & 2,054 & 2 & Mars Pathfinder, Po2C \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure*}[t]
+\centering
+\begin{minipage}[t]{0.48\textwidth}
 \centering
 \begin{tikzpicture}
 \begin{axis}[
-    width=\columnwidth,
+    width=\textwidth,
     height=5.5cm,
     xlabel={API Cost (USD)},
     ylabel={Benchmark Score},
@@ -455,50 +519,17 @@ full breakdown.
 \node[font=\tiny, anchor=south west] at (axis cs:2.23,92.9) {contrarian};
 \end{axis}
 \end{tikzpicture}
-\caption{Benchmark score vs.\ API cost.  Control (blue square) is the
-most cost-efficient.  Contrarian (top right) delivers the best absolute
-score but costs 2.6$\times$ more.}
+\subcaption{Benchmark score vs.\ API cost.  Control (blue square) is the
+most cost-efficient; contrarian delivers the best score at 2.6$\times$ cost.}
 \label{fig:cost}
-\end{figure}
-
-\begin{table}[ht]
-\centering\small
-\caption{Cost, efficiency, and code metrics.  Score/\$ = benchmark score
-per dollar of API cost.}
-\label{tab:efficiency}
-\begin{tabular}{@{}lrrrr@{}}
-\toprule
-\textbf{Condition} & \textbf{Time} & \textbf{Cost}
-  & \textbf{LOC} & \textbf{Score/\$} \\
-\midrule
-control     & 4:03  & \$0.85 & 471 & 99.7 \\
-subtle      & 4:04  & \$0.92 & 378 & 97.9 \\
-reflective  & 5:36  & \$1.42 & 466 & 60.5 \\
-flaneur     & 7:49  & \$2.10 & 548 & 42.4 \\
-contrarian  & 9:21  & \$2.23 & 539 & 41.7 \\
-consilience & 9:17  & \$2.81 & 531 & 27.1 \\
-explicit    & 5:05  & \$2.92 & 534 & 31.2 \\
-biomimetic  & 12:07 & \$2.98 & 444 & 28.7 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-% ── 3.6  Wikipedia Usage ─────────────────────────────────
-\subsection{Wikipedia Usage}
-
-Table~\ref{tab:wiki} shows research effort versus actual knowledge
-extraction.  Explicit spent the most subagent tokens (2,894) but
-referenced zero Wikipedia articles in its final code.  Contrarian read
-the fewest articles among active conditions (2) but extracted the most
-actionable insight---power-of-two-choices routing became its core
-algorithm and the Mars Pathfinder case motivated its asymmetric EWMA.
-
-\begin{figure}[ht]
+\end{minipage}%
+\hfill%
+\begin{minipage}[t]{0.48\textwidth}
 \centering
 \begin{tikzpicture}
 \begin{axis}[
-    width=\columnwidth,
-    height=5cm,
+    width=\textwidth,
+    height=5.5cm,
     xlabel={Subagent Tokens},
     ylabel={Articles Referenced},
     xmin=0, xmax=3200,
@@ -532,35 +563,16 @@ algorithm and the Mars Pathfinder case motivated its asymmetric EWMA.
 \node[font=\tiny, anchor=south west] at (axis cs:2054,2) {contrarian};
 \end{axis}
 \end{tikzpicture}
-\caption{Research effort (subagent tokens) vs.\ knowledge extraction
-(Wikipedia articles referenced in final code).  Explicit researched the
-most but extracted nothing; contrarian researched less but extracted
-high-impact insights.}
+\subcaption{Research effort vs.\ knowledge extraction.  Explicit researched
+the most but extracted nothing; contrarian extracted high-impact insights.}
 \label{fig:wiki}
-\end{figure}
+\end{minipage}
+\caption{Cost--performance trade-off (left) and Wikipedia research
+patterns (right).}
+\label{fig:scatters}
+\end{figure*}
 
-\begin{table}[ht]
-\centering\small
-\caption{Wikipedia usage per condition.  ``Tokens'' = subagent output
-tokens; ``Articles'' = Wikipedia articles visibly referenced in the final
-implementation.}
-\label{tab:wiki}
-\begin{tabular}{@{}lrrp{2.8cm}@{}}
-\toprule
-\textbf{Cond.} & \textbf{Tokens} & \textbf{Art.}
-  & \textbf{Key Sources} \\
-\midrule
-control     & 108   & 0 & --- \\
-subtle      & 108   & 0 & Never found tools \\
-explicit    & 2,894 & 0 & Research didn't transfer \\
-reflective  & 1,456 & 4 & Gmail outage, NE blackout \\
-flaneur     & 1,707 & 6 & Monocoque, Deperdussin \\
-consilience & 2,238 & 6 & UFLS, ISR, triage \\
-biomimetic  & 1,980 & 5 & Baroreceptors, ACO \\
-contrarian  & 2,054 & 2 & Mars Pathfinder, Po2C \\
-\bottomrule
-\end{tabular}
-\end{table}
+\FloatBarrier
 
 % ─────────────────────────────────────────────────────────
 % 4. WHAT EACH AGENT BUILT
@@ -704,6 +716,7 @@ pairings), introducing noise in the margin estimates.
 % ─────────────────────────────────────────────────────────
 % 6. CONCLUSION
 % ─────────────────────────────────────────────────────────
+\enlargethispage{2\baselineskip}
 \section{Conclusion}
 
 Wikipedia access can improve LLM-generated code, but the research
