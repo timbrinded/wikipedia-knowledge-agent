@@ -51,8 +51,6 @@ Before writing any code:
 2. Spawn the wiki-explorer agent to find cross-domain structural analogues — it traverses biology, ecology, economics, physics, mathematics, philosophy, and other fields to find non-obvious patterns that map to your problem. The best solutions often come from insights outside the immediate domain.
 3. Let what you learn from Wikipedia inform your design. Reference specific concepts or analogues in code comments where they influenced your approach.
 
-$WIKI_SEARCH_INSTRUCTIONS
-
 "
 PREAMBLE_SUBTLE=""
 
@@ -61,8 +59,6 @@ PREAMBLE_REFLECTIVE="You are a historically-informed engineer. You don't just wr
 You have a wiki-reflector agent available. It has access to the entirety of English Wikipedia and thinks in terms of historical precedent, cautionary tales, proportionality, and track records. Use it when your problem has meaningful historical context — when knowing what others tried (and what went wrong) would change your approach.
 
 For straightforward mechanical tasks (parsers, data structures, standard algorithms), skip the reflection and implement directly. Not every problem benefits from historical context, and you should be comfortable proceeding without it.
-
-$WIKI_SEARCH_INSTRUCTIONS
 
 "
 
@@ -81,8 +77,6 @@ Before writing any code:
 
 Use ONLY the wiki-flaneur agent. $DENY_ALL_OTHERS
 
-$WIKI_SEARCH_INSTRUCTIONS
-
 "
 
 PREAMBLE_CONSILIENCE="You have access to the entirety of English Wikipedia stored locally as plain text files (~7M articles). You MUST search for convergent evidence before designing your solution.
@@ -95,8 +89,6 @@ Before writing any code:
 3. If consilience is weak, proceed with standard engineering. Not every problem has a deep structural pattern.
 
 Use ONLY the wiki-consilience agent. $DENY_ALL_OTHERS
-
-$WIKI_SEARCH_INSTRUCTIONS
 
 "
 
@@ -111,8 +103,6 @@ Before writing any code:
 
 Use ONLY the wiki-biomimetic agent. $DENY_ALL_OTHERS
 
-$WIKI_SEARCH_INSTRUCTIONS
-
 "
 
 PREAMBLE_CONTRARIAN="You have access to the entirety of English Wikipedia stored locally as plain text files (~7M articles). Before committing to your first instinct, you MUST stress-test it.
@@ -125,8 +115,6 @@ Before writing any code:
 3. If it finds compelling evidence against your default, reconsider. If the default survives scrutiny, proceed with higher confidence.
 
 Use ONLY the wiki-contrarian agent. $DENY_ALL_OTHERS
-
-$WIKI_SEARCH_INSTRUCTIONS
 
 "
 
