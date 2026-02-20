@@ -18,6 +18,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 PROBLEMS_DIR="$SCRIPT_DIR/problems"
 RESULTS_DIR="$PROJECT_DIR/results"
 PLUGIN_DIR="$PROJECT_DIR"
+AGENTS_DIR="$PROJECT_DIR/agents"
 DATA_DIR="${WIKIPEDIA_DATA_DIR:-$PROJECT_DIR/data}"
 
 # Configurable
@@ -25,7 +26,7 @@ CLAUDE_CMD="${CLAUDE_CMD:-claude}"
 PROBLEMS="${PROBLEMS:-$(ls "$PROBLEMS_DIR"/*.md | sort)}"
 CONDITIONS="${CONDITIONS:-control explicit subtle reflective flaneur consilience biomimetic contrarian}"
 
-# Build extra Claude CLI flags for a given condition
+# Build extra Claude CLI flags for a given condition (phase 2 — coding)
 claude_extra_args() {
     local condition="$1"
     local workdir="$2"
@@ -36,6 +37,122 @@ claude_extra_args() {
     echo "$args"
 }
 
+# Map condition → agent file
+agent_file_for_condition() {
+    local condition="$1"
+    case "$condition" in
+        explicit)    echo "$AGENTS_DIR/wiki-explorer.md" ;;
+        reflective)  echo "$AGENTS_DIR/wiki-reflector.md" ;;
+        flaneur)     echo "$AGENTS_DIR/wiki-flaneur.md" ;;
+        consilience) echo "$AGENTS_DIR/wiki-consilience.md" ;;
+        biomimetic)  echo "$AGENTS_DIR/wiki-biomimetic.md" ;;
+        contrarian)  echo "$AGENTS_DIR/wiki-contrarian.md" ;;
+        *)           echo "" ;;
+    esac
+}
+
+# Map condition → research instruction
+research_instruction_for_condition() {
+    local condition="$1"
+    case "$condition" in
+        explicit)    echo "Research cross-domain analogues for this problem." ;;
+        reflective)  echo "Find historical precedent and proportionality checks for this problem." ;;
+        flaneur)     echo "Take a random walk through Wikipedia, then reflect on connections to this problem." ;;
+        consilience) echo "Find convergent patterns across 3+ independent domains for this problem." ;;
+        biomimetic)  echo "Find biological and ecological analogues for this problem." ;;
+        contrarian)  echo "Stress-test the obvious approach to this problem. Find evidence against the default." ;;
+        *)           echo "" ;;
+    esac
+}
+
+# Extract system prompt from agent .md file (everything after YAML frontmatter)
+extract_agent_system_prompt() {
+    local agent_file="$1"
+    # Skip YAML frontmatter: drop everything from first --- to second ---
+    sed -n '/^---$/,/^---$/!p' "$agent_file"
+}
+
+# Conditions that get a research phase (have wiki agents)
+condition_has_research() {
+    local condition="$1"
+    case "$condition" in
+        explicit|reflective|flaneur|consilience|biomimetic|contrarian) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Run the research phase for a wiki condition.
+# Produces $outdir/research.json with the raw output.
+# Returns the research text via stdout (caller captures it).
+run_research_phase() {
+    local problem_spec="$1"
+    local condition="$2"
+    local outdir="$3"
+    local workdir="$4"
+
+    local agent_file
+    agent_file=$(agent_file_for_condition "$condition")
+    if [ -z "$agent_file" ] || [ ! -f "$agent_file" ]; then
+        echo "ERROR: No agent file for condition '$condition'" >&2
+        return 1
+    fi
+
+    local agent_system_prompt
+    agent_system_prompt=$(extract_agent_system_prompt "$agent_file")
+
+    local research_instruction
+    research_instruction=$(research_instruction_for_condition "$condition")
+
+    local research_prompt="You are running in non-interactive mode. Do NOT use AskUserQuestion. Do NOT enter plan mode. Do NOT write any code.
+
+You are a Wikipedia research agent. Your ONLY job is to search the local Wikipedia corpus and produce structured research findings.
+
+${agent_system_prompt}
+
+---
+
+PROBLEM TO RESEARCH:
+${problem_spec}
+
+---
+
+INSTRUCTIONS:
+1. ${research_instruction}
+2. Search the Wikipedia corpus in data/articles/ using grep patterns and file reads
+3. Read relevant articles deeply
+4. Produce structured findings following your Output Shape format
+5. Do NOT write any implementation code — only research findings"
+
+    echo "  RESEARCH $condition — starting research phase..." >&2
+    local research_start
+    research_start=$(date +%s)
+
+    # Run research agent standalone — no --plugin-dir (just Bash/Read/Glob access)
+    (cd "$workdir" && \
+    CLAUDECODE= $CLAUDE_CMD -p "$research_prompt" \
+        --dangerously-skip-permissions \
+        --output-format json \
+        > "$outdir/research.json" \
+        2> "$outdir/research_stderr.log" \
+        || true)
+
+    local research_end
+    research_end=$(date +%s)
+    local research_duration=$(( research_end - research_start ))
+
+    echo "  RESEARCH $condition — done (${research_duration}s)" >&2
+
+    # Extract the result text from the JSON output
+    local research_text
+    research_text=$(jq -r '.result // ""' "$outdir/research.json" 2>/dev/null || echo "")
+
+    # Write duration to a file so the caller can read it
+    # (command substitution runs in a subshell, so env vars don't propagate)
+    echo "$research_duration" > "$outdir/research_duration"
+
+    echo "$research_text"
+}
+
 # Universal preamble — ensures the agent writes code directly in non-interactive mode
 PREAMBLE_UNIVERSAL="You are running in non-interactive mode. Implement the solution fully by yourself. Do NOT use AskUserQuestion or ask for user input — write all code directly. Do NOT enter plan mode. Just implement the solution and write the files.
 
@@ -44,77 +161,43 @@ PREAMBLE_UNIVERSAL="You are running in non-interactive mode. Implement the solut
 # Preambles for each condition
 # Search instructions now live in each agent's .md file ("Scrubbing the Corpus" block)
 PREAMBLE_CONTROL=""
-PREAMBLE_EXPLICIT="IMPORTANT: You have access to the entirety of English Wikipedia stored locally as plain text files (~7M articles). You MUST consult Wikipedia before designing your solution.
-
-Before writing any code:
-1. Use the wiki-lookup skill to research the core concepts of the problem domain (algorithms, data structures, known approaches).
-2. Spawn the wiki-explorer agent to find cross-domain structural analogues — it traverses biology, ecology, economics, physics, mathematics, philosophy, and other fields to find non-obvious patterns that map to your problem. The best solutions often come from insights outside the immediate domain.
-3. Let what you learn from Wikipedia inform your design. Reference specific concepts or analogues in code comments where they influenced your approach.
+PREAMBLE_EXPLICIT="Wikipedia research has already been conducted for you (see \"Wikipedia Research Findings\" above).
+Use these findings to inform your implementation. Do not repeat the research. Reference specific concepts or analogues in code comments where they influenced your approach.
 
 "
 PREAMBLE_SUBTLE=""
 
 PREAMBLE_REFLECTIVE="You are a historically-informed engineer. You don't just write correct code — you think about regret. Before committing to an approach, you consider: what has been tried before? What failed? Is this complexity proportionate to the problem?
 
-You have a wiki-reflector agent available. It has access to the entirety of English Wikipedia and thinks in terms of historical precedent, cautionary tales, proportionality, and track records. Use it when your problem has meaningful historical context — when knowing what others tried (and what went wrong) would change your approach.
-
-For straightforward mechanical tasks (parsers, data structures, standard algorithms), skip the reflection and implement directly. Not every problem benefits from historical context, and you should be comfortable proceeding without it.
+Wikipedia research has already been conducted for you (see \"Wikipedia Research Findings\" above).
+Use these findings — historical precedent, cautionary tales, proportionality checks — to inform your implementation. Do not repeat the research.
 
 "
 
 # --- Wave 2 conditions ---
+# (Research is now done in a separate phase — preambles just tell the coder to USE the findings)
 
-DENY_ALL_OTHERS="STRICT RULE: Do NOT spawn or use any wiki agent other than the one specified above. Specifically, do NOT use: wiki-explorer, wiki-reflector, wiki-flaneur, wiki-consilience, wiki-biomimetic, or wiki-contrarian — unless it is the one explicitly named in your instructions."
-
-PREAMBLE_FLANEUR="You have access to the entirety of English Wikipedia stored locally as plain text files (~7M articles). Before you start engineering, you MUST let the wiki-flaneur agent take a random walk through Wikipedia.
-
-The flaneur does not search for solutions. It wanders — picking random articles, following curiosity, reading deeply — and only AFTER the walk does it reflect on what might connect to your problem. The best insights come from exposure you didn't plan.
-
-Before writing any code:
-1. Spawn the wiki-flaneur agent with the problem statement. Let it walk.
-2. Read what it brings back. Let the texture settle.
-3. Then — and only then — design and implement your solution. Let whatever resonated from the walk influence your design, even if the connection is loose.
-
-Use ONLY the wiki-flaneur agent. $DENY_ALL_OTHERS
+PREAMBLE_FLANEUR="A wiki-flaneur agent has already taken a random walk through Wikipedia for you (see \"Wikipedia Research Findings\" above).
+The flaneur wandered without agenda, followed curiosity, and reflected on what might connect to your problem. Let the texture settle. Let whatever resonated from the walk influence your design, even if the connection is loose.
+Do not repeat the research.
 
 "
 
-PREAMBLE_CONSILIENCE="You have access to the entirety of English Wikipedia stored locally as plain text files (~7M articles). You MUST search for convergent evidence before designing your solution.
-
-You have a wiki-consilience agent. It hunts for the same structural pattern appearing independently across 3+ unrelated domains. One analogy is anecdote. Two is suggestive. Three independent convergences is signal — evidence that a pattern is fundamental, not accidental.
-
-Before writing any code:
-1. Spawn the wiki-consilience agent with the problem statement.
-2. If it finds strong consilience (3+ independent domains converging on the same mechanism), treat that as strong evidence the pattern is fundamental — build on it.
-3. If consilience is weak, proceed with standard engineering. Not every problem has a deep structural pattern.
-
-Use ONLY the wiki-consilience agent. $DENY_ALL_OTHERS
+PREAMBLE_CONSILIENCE="Wikipedia research has already been conducted for you (see \"Wikipedia Research Findings\" above).
+A wiki-consilience agent searched for convergent evidence — the same structural pattern appearing independently across 3+ unrelated domains. If it found strong consilience, treat that as strong evidence the pattern is fundamental — build on it. If consilience is weak, proceed with standard engineering.
+Do not repeat the research.
 
 "
 
-PREAMBLE_BIOMIMETIC="You have access to the entirety of English Wikipedia stored locally as plain text files (~7M articles). You MUST consult biology and ecology before designing your solution.
-
-You have a wiki-biomimetic agent. It looks ONLY at biological and ecological systems — evolution, neuroscience, immunology, ethology, botany, mycology — to find how nature solves the same structural problem. Four billion years of evolution has produced solutions to resource allocation, distributed coordination, fault tolerance, and optimization that often outperform human engineering.
-
-Before writing any code:
-1. Spawn the wiki-biomimetic agent with the problem statement.
-2. If it finds a biological mechanism that translates well to code, implement it. Not as a metaphor — as an actual algorithm or architecture derived from the biological mechanism.
-3. If the biological lens doesn't improve on standard approaches, proceed with standard engineering. The agent will tell you honestly.
-
-Use ONLY the wiki-biomimetic agent. $DENY_ALL_OTHERS
+PREAMBLE_BIOMIMETIC="Wikipedia research has already been conducted for you (see \"Wikipedia Research Findings\" above).
+A wiki-biomimetic agent searched biology and ecology — evolution, neuroscience, immunology, ethology, botany, mycology — for how nature solves the same structural problem. If it found a biological mechanism that translates well to code, implement it as an actual algorithm or architecture derived from the mechanism, not just a metaphor. If the biological lens doesn't improve on standard approaches, proceed with standard engineering.
+Do not repeat the research.
 
 "
 
-PREAMBLE_CONTRARIAN="You have access to the entirety of English Wikipedia stored locally as plain text files (~7M articles). Before committing to your first instinct, you MUST stress-test it.
-
-You have a wiki-contrarian agent. It is adversarial — it actively searches for evidence that the obvious approach is WRONG. Historical failures, known limitations, documented anti-patterns, cases where the standard solution lost. Its job is to find reasons NOT to do the thing you were about to do.
-
-Before writing any code:
-1. Identify your default approach — the thing you'd build without thinking twice.
-2. Spawn the wiki-contrarian agent to stress-test that default.
-3. If it finds compelling evidence against your default, reconsider. If the default survives scrutiny, proceed with higher confidence.
-
-Use ONLY the wiki-contrarian agent. $DENY_ALL_OTHERS
+PREAMBLE_CONTRARIAN="Wikipedia research has already been conducted for you (see \"Wikipedia Research Findings\" above).
+A wiki-contrarian agent stress-tested the obvious approach — searching for historical failures, known limitations, documented anti-patterns, and cases where the standard solution lost. If it found compelling evidence against the default, reconsider your approach. If the default survived scrutiny, proceed with higher confidence.
+Do not repeat the research.
 
 "
 
@@ -177,14 +260,41 @@ run_problem() {
 $(cat "$contract_dir/README.md")"
     fi
 
+    # Set up workspace — symlink Wikipedia data for non-control conditions
+    if [ "$condition" != "control" ]; then
+        ln -sfn "$DATA_DIR" "$workdir/data"
+    fi
+
+    # --- Phase 1: Research (for wiki conditions only) ---
+    local research_text=""
+    local research_duration=0
+    if condition_has_research "$condition"; then
+        research_text=$(run_research_phase "$prompt" "$condition" "$outdir" "$workdir")
+        research_duration=$(cat "$outdir/research_duration" 2>/dev/null || echo "0")
+    fi
+
+    # --- Phase 2: Coding ---
     # Build the full prompt based on condition
+    local research_section=""
+    if [ -n "$research_text" ]; then
+        research_section="
+## Wikipedia Research Findings
+The following research was conducted by the ${condition} research agent before you began:
+---
+${research_text}
+---
+Use these findings to inform your design. Reference specific concepts where they influenced your approach.
+
+"
+    fi
+
     local full_prompt
     case "$condition" in
         control)
             full_prompt="${PREAMBLE_UNIVERSAL}${prompt}"
             ;;
         explicit)
-            full_prompt="${PREAMBLE_UNIVERSAL}${PREAMBLE_EXPLICIT}${prompt}"
+            full_prompt="${PREAMBLE_UNIVERSAL}${research_section}${PREAMBLE_EXPLICIT}${prompt}"
             ;;
         subtle)
             # For subtle: we install the skill but don't mention it in the prompt.
@@ -192,19 +302,19 @@ $(cat "$contract_dir/README.md")"
             full_prompt="${PREAMBLE_UNIVERSAL}${prompt}"
             ;;
         reflective)
-            full_prompt="${PREAMBLE_UNIVERSAL}${PREAMBLE_REFLECTIVE}${prompt}"
+            full_prompt="${PREAMBLE_UNIVERSAL}${research_section}${PREAMBLE_REFLECTIVE}${prompt}"
             ;;
         flaneur)
-            full_prompt="${PREAMBLE_UNIVERSAL}${PREAMBLE_FLANEUR}${prompt}"
+            full_prompt="${PREAMBLE_UNIVERSAL}${research_section}${PREAMBLE_FLANEUR}${prompt}"
             ;;
         consilience)
-            full_prompt="${PREAMBLE_UNIVERSAL}${PREAMBLE_CONSILIENCE}${prompt}"
+            full_prompt="${PREAMBLE_UNIVERSAL}${research_section}${PREAMBLE_CONSILIENCE}${prompt}"
             ;;
         biomimetic)
-            full_prompt="${PREAMBLE_UNIVERSAL}${PREAMBLE_BIOMIMETIC}${prompt}"
+            full_prompt="${PREAMBLE_UNIVERSAL}${research_section}${PREAMBLE_BIOMIMETIC}${prompt}"
             ;;
         contrarian)
-            full_prompt="${PREAMBLE_UNIVERSAL}${PREAMBLE_CONTRARIAN}${prompt}"
+            full_prompt="${PREAMBLE_UNIVERSAL}${research_section}${PREAMBLE_CONTRARIAN}${prompt}"
             ;;
         *)
             echo "ERROR: Unknown condition '$condition'" >&2
@@ -212,18 +322,13 @@ $(cat "$contract_dir/README.md")"
             ;;
     esac
 
-    # Set up workspace — symlink Wikipedia data for non-control conditions
-    if [ "$condition" != "control" ]; then
-        ln -sfn "$DATA_DIR" "$workdir/data"
-    fi
-
     # Build extra CLI flags (--plugin-dir for non-control)
     local extra_args
     extra_args=$(claude_extra_args "$condition" "$workdir")
 
-    echo "  RUN  $problem_name/$condition"
-    local start_time
-    start_time=$(date +%s)
+    echo "  RUN  $problem_name/$condition (coding phase)"
+    local code_start
+    code_start=$(date +%s)
 
     # Run Claude Code non-interactively
     # Capture stdout, stderr, and exit code
@@ -237,23 +342,26 @@ $(cat "$contract_dir/README.md")"
         2> "$outdir/stderr.log" \
         || true)
 
-    local end_time
-    end_time=$(date +%s)
-    local duration=$(( end_time - start_time ))
+    local code_end
+    code_end=$(date +%s)
+    local code_duration=$(( code_end - code_start ))
+    local total_duration=$(( research_duration + code_duration ))
 
     # Record metadata
     cat > "$outdir/meta.json" << METAEOF
 {
     "problem": "$problem_name",
     "condition": "$condition",
-    "duration_seconds": $duration,
+    "research_duration_seconds": $research_duration,
+    "code_duration_seconds": $code_duration,
+    "total_duration_seconds": $total_duration,
     "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
     "claude_cmd": "$CLAUDE_CMD"
 }
 METAEOF
 
     touch "$outdir/done"
-    echo "  DONE $problem_name/$condition (${duration}s)"
+    echo "  DONE $problem_name/$condition (research: ${research_duration}s, code: ${code_duration}s, total: ${total_duration}s)"
 }
 
 # Run all combinations
