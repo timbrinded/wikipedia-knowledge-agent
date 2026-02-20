@@ -41,22 +41,10 @@ PREAMBLE_UNIVERSAL="You are running in non-interactive mode. Implement the solut
 
 "
 
-# Shared search instructions — used by multiple preambles below
-WIKI_SEARCH_INSTRUCTIONS="For quick lookups, search directly:
-- Titles: rg -i \"<query>\" data/index/titles.txt | head -20
-- Categories: rg -i \"<query>\" data/index/categories.txt | head -20
-- Word-boundary (avoid partial matches): rg -i -w \"<query>\" data/index/titles.txt
-- OR search (synonyms): rg -i -e \"<term1>\" -e \"<term2>\" data/index/titles.txt
-- Read article: find path via rg -m1 \"^<slug>\t\" data/index/paths.txt | cut -f3, then read it
-- Preview article: head -50 data/articles/<prefix>/<slug>.txt
-- Content search (files): rg -l -i \"<query>\" data/articles/ | head -20
-- Content snippets: rg -i -m2 -C1 \"<query>\" data/articles/<prefix>/<slug>.txt
-
-Strategy: search titles first (instant), preview with head -50 before reading fully, narrow with -w if too many results, broaden with -e synonyms if too few."
-
 # Preambles for each condition
+# Search instructions now live in each agent's .md file ("Scrubbing the Corpus" block)
 PREAMBLE_CONTROL=""
-PREAMBLE_EXPLICIT="IMPORTANT: You have access to the entirety of English Wikipedia stored locally as plain text files (~20K articles). You MUST consult Wikipedia before designing your solution.
+PREAMBLE_EXPLICIT="IMPORTANT: You have access to the entirety of English Wikipedia stored locally as plain text files (~7M articles). You MUST consult Wikipedia before designing your solution.
 
 Before writing any code:
 1. Use the wiki-lookup skill to research the core concepts of the problem domain (algorithms, data structures, known approaches).
@@ -82,7 +70,7 @@ $WIKI_SEARCH_INSTRUCTIONS
 
 DENY_ALL_OTHERS="STRICT RULE: Do NOT spawn or use any wiki agent other than the one specified above. Specifically, do NOT use: wiki-explorer, wiki-reflector, wiki-flaneur, wiki-consilience, wiki-biomimetic, or wiki-contrarian — unless it is the one explicitly named in your instructions."
 
-PREAMBLE_FLANEUR="You have access to the entirety of English Wikipedia stored locally as plain text files (~20K articles). Before you start engineering, you MUST let the wiki-flaneur agent take a random walk through Wikipedia.
+PREAMBLE_FLANEUR="You have access to the entirety of English Wikipedia stored locally as plain text files (~7M articles). Before you start engineering, you MUST let the wiki-flaneur agent take a random walk through Wikipedia.
 
 The flaneur does not search for solutions. It wanders — picking random articles, following curiosity, reading deeply — and only AFTER the walk does it reflect on what might connect to your problem. The best insights come from exposure you didn't plan.
 
@@ -97,7 +85,7 @@ $WIKI_SEARCH_INSTRUCTIONS
 
 "
 
-PREAMBLE_CONSILIENCE="You have access to the entirety of English Wikipedia stored locally as plain text files (~20K articles). You MUST search for convergent evidence before designing your solution.
+PREAMBLE_CONSILIENCE="You have access to the entirety of English Wikipedia stored locally as plain text files (~7M articles). You MUST search for convergent evidence before designing your solution.
 
 You have a wiki-consilience agent. It hunts for the same structural pattern appearing independently across 3+ unrelated domains. One analogy is anecdote. Two is suggestive. Three independent convergences is signal — evidence that a pattern is fundamental, not accidental.
 
@@ -112,7 +100,7 @@ $WIKI_SEARCH_INSTRUCTIONS
 
 "
 
-PREAMBLE_BIOMIMETIC="You have access to the entirety of English Wikipedia stored locally as plain text files (~20K articles). You MUST consult biology and ecology before designing your solution.
+PREAMBLE_BIOMIMETIC="You have access to the entirety of English Wikipedia stored locally as plain text files (~7M articles). You MUST consult biology and ecology before designing your solution.
 
 You have a wiki-biomimetic agent. It looks ONLY at biological and ecological systems — evolution, neuroscience, immunology, ethology, botany, mycology — to find how nature solves the same structural problem. Four billion years of evolution has produced solutions to resource allocation, distributed coordination, fault tolerance, and optimization that often outperform human engineering.
 
@@ -127,7 +115,7 @@ $WIKI_SEARCH_INSTRUCTIONS
 
 "
 
-PREAMBLE_CONTRARIAN="You have access to the entirety of English Wikipedia stored locally as plain text files (~20K articles). Before committing to your first instinct, you MUST stress-test it.
+PREAMBLE_CONTRARIAN="You have access to the entirety of English Wikipedia stored locally as plain text files (~7M articles). Before committing to your first instinct, you MUST stress-test it.
 
 You have a wiki-contrarian agent. It is adversarial — it actively searches for evidence that the obvious approach is WRONG. Historical failures, known limitations, documented anti-patterns, cases where the standard solution lost. Its job is to find reasons NOT to do the thing you were about to do.
 

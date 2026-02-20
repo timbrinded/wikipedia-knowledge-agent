@@ -148,7 +148,10 @@ methods: \texttt{on\_backend\_added}, \texttt{route\_request},
 \texttt{on\_request\_complete}, and \texttt{on\_tick}.  Backend health is
 inferred through an opaque \texttt{BackendHandle} protocol---the agent
 cannot query health directly, only observe request outcomes and probe
-results.
+results.  Each Wikipedia condition's research agent explores the local
+corpus with the same tools it uses for code---ripgrep for cross-article
+full-text search, file reads for deep inspection---treating the
+encyclopedia as a searchable corpus rather than a lookup API.
 
 \subsection{Conditions}
 

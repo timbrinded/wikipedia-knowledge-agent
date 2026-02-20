@@ -62,9 +62,16 @@ Cast wide across your allowed domains. A single engineering problem might have s
 - Ecology (how ecosystems do it)
 - Ethology (how animal groups do it)
 
+Grep for the *engineering* concept across the corpus — nature's solutions won't have "engineering" in the title, but articles about ant colonies, immune responses, and root networks will *mention* the abstract problem:
+
 ```bash
-rg -i "<biological_term>" data/index/titles.txt | head -20
-rg -i "<biological_term>" data/index/categories.txt | head -20
+rg -l -i "<engineering_concept>" data/articles/ | head -30
+```
+
+Scan the results for biological articles. Then intersect to find biology that discusses your specific challenge:
+
+```bash
+rg -l -i "<engineering_concept>" data/articles/ | xargs rg -l -i "organism\|species\|cell\|colony\|neural\|immune" | head -10
 ```
 
 Read deeply. Understand the **mechanism**, not just the metaphor. "Ants use pheromones" is a metaphor. "Ants deposit pheromone proportional to path quality, creating a positive feedback loop that amplifies good routes while evaporation provides natural decay of stale information" is a mechanism you can implement.
@@ -86,28 +93,31 @@ Not every biological solution translates well. Evaluate:
 
 Be honest. If the biological lens doesn't improve on standard approaches for this problem, say so.
 
-## Navigating the Data
+## Scrubbing the Corpus
 
-Wikipedia is stored as ~20K plain text articles in `data/articles/<2-char-prefix>/<slug>.txt`.
+You explore Wikipedia the way you'd explore a large, unfamiliar codebase — grep first, read second, follow connections.
 
-Three indexes enable fast search:
-- **`data/index/titles.txt`** — all article titles (fast title search)
-- **`data/index/categories.txt`** — article categories (find broad topic areas)
-- **`data/index/paths.txt`** — tab-separated: slug → title → filepath
+~7M articles stored as plain text in `data/articles/<2-char-prefix>/<slug>.txt`.
 
-**Search patterns:**
-- Title search: `rg -i "<query>" data/index/titles.txt | head -20`
-- Category search: `rg -i "<query>" data/index/categories.txt | head -20`
-- Word-boundary search (avoid partial matches): `rg -i -w "<query>" data/index/titles.txt`
-- OR search (synonyms): `rg -i -e "<term1>" -e "<term2>" data/index/titles.txt`
-- Read an article: `rg -m1 "^<slug>\t" data/index/paths.txt | cut -f3` → then Read tool
-- Preview before full read: `head -50 data/articles/<prefix>/<slug>.txt`
-- Content search (files): `rg -l -i "<query>" data/articles/ | head -20`
-- Content snippets: `rg -i -m2 -C1 "<query>" data/articles/<prefix>/<slug>.txt`
+**Discovery workflow (primary):**
+1. Grep for concepts across the entire corpus:
+   `rg -l -i "<concept>" data/articles/ | head -30`
+2. Read matches in context before committing:
+   `rg -i -m3 -C2 "<concept>" data/articles/<prefix>/<slug>.txt`
+3. Cross-reference — extract terms from what you found, grep for those:
+   `rg -l -i "<new_term>" data/articles/ | head -30`
+4. Intersect — find articles mentioning both concepts:
+   `rg -l -i "<A>" data/articles/ | xargs rg -l -i "<B>" | head -10`
+5. Rank by density — who talks about this the most?
+   `rg -i -c "<concept>" data/articles/ | sort -t: -k2 -nr | head -10`
 
-**Strategy:** Search titles first (instant). Preview with `head -50` before reading fully. Narrow with `-w` if too many results; broaden with `-e` synonyms if too few. Content search last — powerful but slower.
+**Lookup tools (secondary — for known targets):**
+- Title index: `rg -i "<query>" data/index/titles.txt | head -20`
+- Category browse: `rg -i "<query>" data/index/categories.txt | head -20`
+- Resolve path: `rg -m1 "^<slug>\t" data/index/paths.txt | cut -f3`
+- Preview: `head -50 data/articles/<prefix>/<slug>.txt`
 
-For advanced patterns (match counting, AND search, prefix scoping), see `data/SEARCH_GUIDE.md`.
+See `data/SEARCH_GUIDE.md` for advanced patterns.
 
 ## Output Shape
 

@@ -6,7 +6,7 @@ description: |-
 
 # Wikipedia Quick Lookup
 
-Quick lookup skill for the local Wikipedia data lake (~20K articles stored as plain text).
+Quick lookup skill for the local Wikipedia data lake (~7M articles stored as plain text).
 
 ## How to Search
 

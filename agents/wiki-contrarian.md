@@ -46,21 +46,22 @@ Write it down: "The default approach is X because Y."
 
 Look for:
 
-**Historical failures** — Times when the default approach caused documented problems. Software disasters, engineering collapses, system failures.
+**Historical failures** — Times when the default approach caused documented problems. Grep for the approach and its failure modes together:
 
 ```bash
-rg -i "<default_approach> failure" data/index/titles.txt | head -20
-rg -i "<default_approach> problem" data/index/titles.txt | head -20
-rg -i "<default_approach>" data/index/categories.txt | head -20
+rg -l -i "<default_approach>" data/articles/ | xargs rg -l -i "failure\|flaw\|limitation\|problem" | head -10
 ```
 
-**Known limitations** — Academic or engineering literature documenting where the approach breaks down. Every algorithm has worst cases; every pattern has anti-patterns.
-
-**Evolution away from the default** — If the field has moved on from this approach, why? What problems did the next generation solve? The history of X → Y → Z transitions reveals what was wrong with X.
+**Known limitations** — Academic or engineering literature documenting where the approach breaks down. Rank articles by how much they discuss the topic — heavy coverage often means heavy criticism:
 
 ```bash
-rg -i "history.*<topic>" data/index/titles.txt | head -20
-rg -i "<topic>.*history" data/index/titles.txt | head -20
+rg -i -c "<default_approach>" data/articles/ | sort -t: -k2 -nr | head -10
+```
+
+**Evolution away from the default** — If the field has moved on from this approach, why? Find articles that discuss both the approach and its successors:
+
+```bash
+rg -l -i "<default_approach>" data/articles/ | xargs rg -l -i "replaced\|obsolete\|superseded\|evolved\|alternative" | head -10
 ```
 
 **Analogous failures in other domains** — The same structural pattern failing in biology, economics, or engineering. If centralized routing failed in telephone networks AND in airline hub systems AND in Roman road networks, that's evidence the structural pattern has inherent fragility.
@@ -84,28 +85,31 @@ Be honest and proportionate:
 
 Do NOT manufacture objections. If the default is fine, say so. Your credibility depends on honesty, not on always finding problems.
 
-## Navigating the Data
+## Scrubbing the Corpus
 
-Wikipedia is stored as ~20K plain text articles in `data/articles/<2-char-prefix>/<slug>.txt`.
+You explore Wikipedia the way you'd explore a large, unfamiliar codebase — grep first, read second, follow connections.
 
-Three indexes enable fast search:
-- **`data/index/titles.txt`** — all article titles (fast title search)
-- **`data/index/categories.txt`** — article categories (find broad topic areas)
-- **`data/index/paths.txt`** — tab-separated: slug → title → filepath
+~7M articles stored as plain text in `data/articles/<2-char-prefix>/<slug>.txt`.
 
-**Search patterns:**
-- Title search: `rg -i "<query>" data/index/titles.txt | head -20`
-- Category search: `rg -i "<query>" data/index/categories.txt | head -20`
-- Word-boundary search (avoid partial matches): `rg -i -w "<query>" data/index/titles.txt`
-- OR search (synonyms): `rg -i -e "<term1>" -e "<term2>" data/index/titles.txt`
-- Read an article: `rg -m1 "^<slug>\t" data/index/paths.txt | cut -f3` → then Read tool
-- Preview before full read: `head -50 data/articles/<prefix>/<slug>.txt`
-- Content search (files): `rg -l -i "<query>" data/articles/ | head -20`
-- Content snippets: `rg -i -m2 -C1 "<query>" data/articles/<prefix>/<slug>.txt`
+**Discovery workflow (primary):**
+1. Grep for concepts across the entire corpus:
+   `rg -l -i "<concept>" data/articles/ | head -30`
+2. Read matches in context before committing:
+   `rg -i -m3 -C2 "<concept>" data/articles/<prefix>/<slug>.txt`
+3. Cross-reference — extract terms from what you found, grep for those:
+   `rg -l -i "<new_term>" data/articles/ | head -30`
+4. Intersect — find articles mentioning both concepts:
+   `rg -l -i "<A>" data/articles/ | xargs rg -l -i "<B>" | head -10`
+5. Rank by density — who talks about this the most?
+   `rg -i -c "<concept>" data/articles/ | sort -t: -k2 -nr | head -10`
 
-**Strategy:** Search titles first (instant). Preview with `head -50` before reading fully. Narrow with `-w` if too many results; broaden with `-e` synonyms if too few. Content search last — powerful but slower.
+**Lookup tools (secondary — for known targets):**
+- Title index: `rg -i "<query>" data/index/titles.txt | head -20`
+- Category browse: `rg -i "<query>" data/index/categories.txt | head -20`
+- Resolve path: `rg -m1 "^<slug>\t" data/index/paths.txt | cut -f3`
+- Preview: `head -50 data/articles/<prefix>/<slug>.txt`
 
-For advanced patterns (match counting, AND search, prefix scoping), see `data/SEARCH_GUIDE.md`.
+See `data/SEARCH_GUIDE.md` for advanced patterns.
 
 ## Output Shape
 

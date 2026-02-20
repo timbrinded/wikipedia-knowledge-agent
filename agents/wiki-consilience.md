@@ -53,14 +53,19 @@ Search for the abstract pattern across domains that have **no historical contact
 - **Philosophy**: epistemology, ethics, decision theory
 - **Chemistry**: reaction kinetics, catalysis, equilibrium systems
 
-For each domain, search broadly:
+Don't search domain by domain. Grep for the abstract pattern across the entire corpus and let the results tell you which domains it appears in:
 
 ```bash
-rg -i "<domain_term>" data/index/titles.txt | head -20
-rg -i "<abstract_pattern_term>" data/index/categories.txt | head -20
+rg -l -i "<abstract_pattern>" data/articles/ | head -40
 ```
 
-Read the most promising articles. Look for the abstract pattern manifesting in domain-specific language.
+Scan the file paths — articles from biology, economics, physics, and history will cluster naturally. Then read the most promising from each cluster. Follow cross-references to deepen within domains:
+
+```bash
+rg -l -i "<abstract_pattern>" data/articles/ | xargs rg -l -i "<domain_specific_term>" | head -10
+```
+
+The key insight: let the corpus reveal convergence rather than searching for it domain by domain. If the same concept surfaces in articles that have no business mentioning each other, that's signal.
 
 ### Step 3 — Test for independence
 
@@ -78,28 +83,31 @@ Rate what you found:
 - **Moderate consilience** (2 independent domains, same mechanism): Suggestive but not conclusive. Worth considering.
 - **Weak/no consilience** (0-1 domains): The pattern may be domain-specific. Proceed with the standard engineering approach.
 
-## Navigating the Data
+## Scrubbing the Corpus
 
-Wikipedia is stored as ~20K plain text articles in `data/articles/<2-char-prefix>/<slug>.txt`.
+You explore Wikipedia the way you'd explore a large, unfamiliar codebase — grep first, read second, follow connections.
 
-Three indexes enable fast search:
-- **`data/index/titles.txt`** — all article titles (fast title search)
-- **`data/index/categories.txt`** — article categories (find broad topic areas)
-- **`data/index/paths.txt`** — tab-separated: slug → title → filepath
+~7M articles stored as plain text in `data/articles/<2-char-prefix>/<slug>.txt`.
 
-**Search patterns:**
-- Title search: `rg -i "<query>" data/index/titles.txt | head -20`
-- Category search: `rg -i "<query>" data/index/categories.txt | head -20`
-- Word-boundary search (avoid partial matches): `rg -i -w "<query>" data/index/titles.txt`
-- OR search (synonyms): `rg -i -e "<term1>" -e "<term2>" data/index/titles.txt`
-- Read an article: `rg -m1 "^<slug>\t" data/index/paths.txt | cut -f3` → then Read tool
-- Preview before full read: `head -50 data/articles/<prefix>/<slug>.txt`
-- Content search (files): `rg -l -i "<query>" data/articles/ | head -20`
-- Content snippets: `rg -i -m2 -C1 "<query>" data/articles/<prefix>/<slug>.txt`
+**Discovery workflow (primary):**
+1. Grep for concepts across the entire corpus:
+   `rg -l -i "<concept>" data/articles/ | head -30`
+2. Read matches in context before committing:
+   `rg -i -m3 -C2 "<concept>" data/articles/<prefix>/<slug>.txt`
+3. Cross-reference — extract terms from what you found, grep for those:
+   `rg -l -i "<new_term>" data/articles/ | head -30`
+4. Intersect — find articles mentioning both concepts:
+   `rg -l -i "<A>" data/articles/ | xargs rg -l -i "<B>" | head -10`
+5. Rank by density — who talks about this the most?
+   `rg -i -c "<concept>" data/articles/ | sort -t: -k2 -nr | head -10`
 
-**Strategy:** Search titles first (instant). Preview with `head -50` before reading fully. Narrow with `-w` if too many results; broaden with `-e` synonyms if too few. Content search last — powerful but slower.
+**Lookup tools (secondary — for known targets):**
+- Title index: `rg -i "<query>" data/index/titles.txt | head -20`
+- Category browse: `rg -i "<query>" data/index/categories.txt | head -20`
+- Resolve path: `rg -m1 "^<slug>\t" data/index/paths.txt | cut -f3`
+- Preview: `head -50 data/articles/<prefix>/<slug>.txt`
 
-For advanced patterns (match counting, AND search, prefix scoping), see `data/SEARCH_GUIDE.md`.
+See `data/SEARCH_GUIDE.md` for advanced patterns.
 
 ## Output Shape
 

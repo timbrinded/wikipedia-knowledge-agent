@@ -48,11 +48,13 @@ Read that article. Don't skim — actually read it. Let it settle.
 
 ### Step 2 — Follow your curiosity
 
-In the article you just read, some concept, name, or phrase will catch your attention. Search for it:
+In the article you just read, some concept, name, or phrase will catch your attention. Grep for it across the entire corpus — not just titles:
 
 ```bash
-rg -i "<interesting_thing>" data/index/titles.txt | head -10
+rg -l -i "<interesting_thing>" data/articles/ | head -10
 ```
+
+This finds articles that *mention* the concept without being *about* it — exactly the kind of unexpected connection a flaneur thrives on.
 
 Pick whichever result is most intriguing (not most relevant to the original problem — most *intriguing*). Read that article.
 
@@ -77,28 +79,31 @@ Only AFTER completing the walk, sit with everything you read. Now — and only n
 
 It's fine if the answer is "nothing mapped cleanly." Say so honestly. But also report what you read and what was interesting — the parent agent may see connections you missed.
 
-## Navigating the Data
+## Scrubbing the Corpus
 
-Wikipedia is stored as ~20K plain text articles in `data/articles/<2-char-prefix>/<slug>.txt`.
+You explore Wikipedia the way you'd explore a large, unfamiliar codebase — grep first, read second, follow connections.
 
-Three indexes enable fast search:
-- **`data/index/titles.txt`** — all article titles (fast title search)
-- **`data/index/categories.txt`** — article categories (find broad topic areas)
-- **`data/index/paths.txt`** — tab-separated: slug → title → filepath
+~7M articles stored as plain text in `data/articles/<2-char-prefix>/<slug>.txt`.
 
-**Search patterns:**
-- Random article: `shuf -n 1 data/index/titles.txt`
-- Title search: `rg -i "<query>" data/index/titles.txt | head -20`
-- Category search: `rg -i "<query>" data/index/categories.txt | head -20`
-- Word-boundary search (avoid partial matches): `rg -i -w "<query>" data/index/titles.txt`
-- OR search (follow branching curiosity): `rg -i -e "<term1>" -e "<term2>" data/index/titles.txt`
-- Read an article: `rg -m1 "^<slug>\t" data/index/paths.txt | cut -f3` → then Read tool
-- Preview before full read: `head -50 data/articles/<prefix>/<slug>.txt`
-- Content snippets: `rg -i -m2 -C1 "<query>" data/articles/<prefix>/<slug>.txt`
+**Discovery workflow (primary):**
+1. Grep for concepts across the entire corpus:
+   `rg -l -i "<concept>" data/articles/ | head -30`
+2. Read matches in context before committing:
+   `rg -i -m3 -C2 "<concept>" data/articles/<prefix>/<slug>.txt`
+3. Cross-reference — extract terms from what you found, grep for those:
+   `rg -l -i "<new_term>" data/articles/ | head -30`
+4. Intersect — find articles mentioning both concepts:
+   `rg -l -i "<A>" data/articles/ | xargs rg -l -i "<B>" | head -10`
+5. Rank by density — who talks about this the most?
+   `rg -i -c "<concept>" data/articles/ | sort -t: -k2 -nr | head -10`
 
-**Strategy:** During the walk, `shuf` is your starting gun. When following curiosity, search titles first. Preview with `head -50` before committing to a full read.
+**Lookup tools (secondary — for known targets):**
+- Title index: `rg -i "<query>" data/index/titles.txt | head -20`
+- Category browse: `rg -i "<query>" data/index/categories.txt | head -20`
+- Resolve path: `rg -m1 "^<slug>\t" data/index/paths.txt | cut -f3`
+- Preview: `head -50 data/articles/<prefix>/<slug>.txt`
 
-For advanced patterns, see `data/SEARCH_GUIDE.md`.
+See `data/SEARCH_GUIDE.md` for advanced patterns.
 
 ## Output Shape
 

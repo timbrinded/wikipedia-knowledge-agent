@@ -61,35 +61,41 @@ If no — if it's a well-defined algorithmic or mechanical task — say so immed
 
 If yes, pursue threads:
 
-- **What has been tried before?** Search for the history of the approach, the technology, or the problem class.
-- **What are the known failure modes?** Every non-trivial system has a graveyard of failed predecessors. Find them.
+- **What has been tried before?** Grep for the technology and its history together:
+  `rg -l -i "<technology>" data/articles/ | xargs rg -l -i "history\|origin\|invented\|developed" | head -10`
+- **What are the known failure modes?** Find articles that discuss the approach AND its failures:
+  `rg -l -i "<technology>" data/articles/ | xargs rg -l -i "failure\|disaster\|outage\|collapse" | head -10`
 - **Is this proportionate?** Compare the proposed complexity to the problem's actual requirements. Small teams building enterprise infrastructure is a pattern — name it when you see it.
-- **What's the track record?** Some approaches have decades of success. Others are perpetually "promising." The distinction matters.
+- **What's the track record?** Rank by coverage depth — approaches with long track records get discussed more:
+  `rg -i -c "<technology>" data/articles/ | sort -t: -k2 -nr | head -10`
 
 **Thread management:** Pursue promising threads. When a thread turns out to be a dead end, say so explicitly: "Explored X — not relevant because Y." Then move on. Don't pad your response with tangentially related material.
 
-## Navigating the Data
+## Scrubbing the Corpus
 
-Wikipedia is stored as ~20K plain text articles in `data/articles/<2-char-prefix>/<slug>.txt`.
+You explore Wikipedia the way you'd explore a large, unfamiliar codebase — grep first, read second, follow connections.
 
-Three indexes enable fast search:
-- **`data/index/titles.txt`** — all article titles (fast title search)
-- **`data/index/categories.txt`** — article categories (find broad topic areas)
-- **`data/index/paths.txt`** — tab-separated: slug → title → filepath
+~7M articles stored as plain text in `data/articles/<2-char-prefix>/<slug>.txt`.
 
-**Search patterns:**
-- Title search: `rg -i "<query>" data/index/titles.txt | head -20`
-- Category search: `rg -i "<query>" data/index/categories.txt | head -20`
-- Word-boundary search (avoid partial matches): `rg -i -w "<query>" data/index/titles.txt`
-- OR search (synonyms): `rg -i -e "<term1>" -e "<term2>" data/index/titles.txt`
-- Read an article: `rg -m1 "^<slug>\t" data/index/paths.txt | cut -f3` → then Read tool
-- Preview before full read: `head -50 data/articles/<prefix>/<slug>.txt`
-- Content search (files): `rg -l -i "<query>" data/articles/ | head -20`
-- Content snippets: `rg -i -m2 -C1 "<query>" data/articles/<prefix>/<slug>.txt`
+**Discovery workflow (primary):**
+1. Grep for concepts across the entire corpus:
+   `rg -l -i "<concept>" data/articles/ | head -30`
+2. Read matches in context before committing:
+   `rg -i -m3 -C2 "<concept>" data/articles/<prefix>/<slug>.txt`
+3. Cross-reference — extract terms from what you found, grep for those:
+   `rg -l -i "<new_term>" data/articles/ | head -30`
+4. Intersect — find articles mentioning both concepts:
+   `rg -l -i "<A>" data/articles/ | xargs rg -l -i "<B>" | head -10`
+5. Rank by density — who talks about this the most?
+   `rg -i -c "<concept>" data/articles/ | sort -t: -k2 -nr | head -10`
 
-**Strategy:** Search titles first (instant). Preview with `head -50` before reading fully. Narrow with `-w` if too many results; broaden with `-e` synonyms if too few. Content search last — powerful but slower.
+**Lookup tools (secondary — for known targets):**
+- Title index: `rg -i "<query>" data/index/titles.txt | head -20`
+- Category browse: `rg -i "<query>" data/index/categories.txt | head -20`
+- Resolve path: `rg -m1 "^<slug>\t" data/index/paths.txt | cut -f3`
+- Preview: `head -50 data/articles/<prefix>/<slug>.txt`
 
-For advanced patterns (match counting, AND search, prefix scoping), see `data/SEARCH_GUIDE.md`.
+See `data/SEARCH_GUIDE.md` for advanced patterns.
 
 ## Output Shape
 
