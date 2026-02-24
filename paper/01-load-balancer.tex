@@ -75,16 +75,22 @@ We test whether augmenting an LLM coding agent with access to Wikipedia
 improves the quality of generated code.  A single design-rich programming
 problem---a graceful-degradation load balancer---is implemented by Claude
 Code under eight conditions: one control and seven Wikipedia-augmented
-variants with different research strategies.  Solutions are evaluated by
-three complementary methods: a blinded LLM judge (design quality), a
-deterministic behavioral benchmark (7 fault scenarios, weighted 0--100),
-and quantitative cost metrics.  The adversarial \textit{contrarian}
-condition, which stress-tests the obvious approach before coding, achieves
-the highest benchmark score (92.9 vs.\ 84.7 control).  Architectural
-ambition can hurt: the \textit{consilience} condition builds the most
-sophisticated design but scores last on benchmarks (76.2).  Judge and
-benchmark rankings diverge meaningfully, suggesting each captures
-different dimensions of code quality.
+variants with different research strategies.  Solutions are evaluated by a
+deterministic behavioral benchmark (7 fault scenarios, weighted 0--100)
+and a blinded LLM judge (design quality).  Two conditions separate from
+the pack: the \textit{flaneur} (95.24) and \textit{biomimetic} (94.77)
+conditions score ${\sim}6$ points above control (89.39), while the
+remaining five Wikipedia conditions cluster within 0.6 points of control.
+However, the experiment's apparatus reveals as much as its results: the
+flaneur did not follow its random-walk instructions---it searched on-topic
+articles instead---yet scored highest.  The blinded judge and benchmark
+diverge \emph{dramatically} on this condition: the judge ranks it below
+control ($-6$ margin) while the benchmark ranks it first.  Biomimetic is
+the only condition that followed its cross-domain research instructions,
+produced a structurally distinct architecture, and scored well.  We
+discuss the apparatus limitations these findings expose, including
+research-strategy enforcement, parametric knowledge contamination, and the
+compute-time confound.
 \end{abstract}
 
 % ─────────────────────────────────────────────────────────
@@ -114,6 +120,12 @@ undirected exploration (\textit{flaneur}), cross-domain convergence
 adversarial critique (\textit{contrarian}).
 Table~\ref{tab:conditions} summarizes all eight conditions.
 
+The results are mixed---and more interesting for their failures than
+their successes.  Two conditions clearly outperform control, but the
+experiment's apparatus reveals gaps that complicate causal claims.  We
+present both the findings and an honest accounting of what the
+experimental design can and cannot tell us.
+
 \begin{table}[ht]
 \centering\small
 \caption{Experimental conditions and research strategies.}
@@ -139,27 +151,43 @@ contrarian  & Stress-test the obvious approach first \\
 % ─────────────────────────────────────────────────────────
 \section{Method}
 
-\subsection{Experimental Setup}
+\subsection{Three-Stage Pipeline}
 
-Each condition runs Claude Code in non-interactive mode
-(\texttt{claude~-p}) with an identical problem specification.  The agent
-implements an \texttt{AbstractLoadBalancer} base class with four required
-methods: \texttt{on\_backend\_added}, \texttt{route\_request},
-\texttt{on\_request\_complete}, and \texttt{on\_tick}.  Backend health is
-inferred through an opaque \texttt{BackendHandle} protocol---the agent
-cannot query health directly, only observe request outcomes and probe
-results.  Each Wikipedia condition's research agent explores the local
-corpus with the same tools it uses for code---ripgrep for cross-article
-full-text search, file reads for deep inspection---treating the
-encyclopedia as a searchable corpus rather than a lookup API.
+Each Wikipedia condition runs through a three-stage pipeline:
+
+\textbf{Stage 1: Retrieval.}  A research subagent
+(\texttt{wiki-explorer}) explores a local corpus of ${\sim}$7~million
+Wikipedia articles using the same tools available for code---ripgrep for
+cross-article full-text search, file reads for deep inspection.  The
+subagent's system prompt encodes the research persona (e.g., ``take a
+random walk'' for flaneur, ``find biological analogies'' for biomimetic).
+Retrieval runs until the subagent terminates or a timeout is reached.
+
+\textbf{Stage 2: Synthesis.}  The research findings are passed to a
+synthesis step that distills the retrieved articles into a structured
+research brief.  This brief accompanies the problem specification in the
+next stage.
+
+\textbf{Stage 3: Coding.}  A fresh Claude Code session receives the
+problem specification, the research brief (if any), and implements the
+solution.  The coding agent has no direct access to Wikipedia---only the
+synthesized brief.  It implements an \texttt{AbstractLoadBalancer} base
+class with four required methods: \texttt{on\_backend\_added},
+\texttt{route\_request}, \texttt{on\_request\_complete}, and
+\texttt{on\_tick}.  Backend health is inferred through an opaque
+\texttt{BackendHandle} protocol---the agent cannot query health directly,
+only observe request outcomes and probe results.
+
+The control condition skips stages 1 and 2, receiving only the problem
+specification.
 
 \subsection{Conditions}
 
 The \textbf{control} receives the problem specification and nothing else.
 All seven Wikipedia conditions receive the same specification plus a
-Wikipedia research agent (\texttt{wiki-explorer}) with access to
-${\sim}$7 million local Wikipedia articles.  The conditions differ only in
-their system prompt framing:
+research brief produced by the retrieval and synthesis stages.  The
+conditions differ only in the system prompt framing given to the research
+subagent:
 
 \begin{itemize}
 \item \textbf{Explicit}: ``Research Wikipedia for load balancer design
@@ -223,6 +251,51 @@ Asymmetric    & Route by backend speed             & 1.0 \\
 \end{tabular}
 \end{table}
 
+\subsection{Apparatus Controls and Limitations}
+\label{sec:apparatus}
+
+Before presenting results, we document what this experiment controls for
+and what it does not.
+
+\textbf{What we controlled.}
+\begin{itemize}
+\item \textit{Retrieval verification}: each research subagent produces a
+      manifest of articles read from disk, confirming that Wikipedia
+      content was actually consumed.
+\item \textit{Comment stripping}: all code is evaluated by the benchmark
+      as-is; comments and docstrings do not affect scores.
+\item \textit{Position randomization}: the judge sees solutions in
+      randomized A/B order, with no condition labels.
+\item \textit{Identical contract}: all conditions implement the same
+      \texttt{AbstractLoadBalancer} interface against the same
+      \texttt{BackendHandle} protocol.
+\end{itemize}
+
+\textbf{What we did not control.}
+\begin{itemize}
+\item \textit{Parametric knowledge contamination}: the coding agent
+      (Claude) has been trained on load-balancing literature.  Wikipedia
+      may confirm or refine existing knowledge rather than introduce
+      genuinely new information.  We cannot distinguish ``the agent learned
+      this from Wikipedia'' from ``the agent already knew this and
+      Wikipedia reinforced it.''
+\item \textit{Research strategy enforcement}: the retrieval manifests
+      verify \emph{which} articles were read, not \emph{how} they were
+      found.  An agent instructed to random-walk can instead search
+      directly for relevant articles.  As we will see, this is exactly
+      what happened with the flaneur condition.
+\item \textit{Compute-time confound}: research conditions consume
+      additional wall-clock time and API tokens during retrieval and
+      synthesis.  A condition that spends 1,200 seconds on research and
+      500 seconds coding has had more total ``thinking time'' than control,
+      which spent 468 seconds coding.  We cannot fully separate the effect
+      of Wikipedia content from the effect of additional compute.
+\item \textit{The subtle failure}: the subtle condition was designed to
+      test whether an agent would organically discover and use Wikipedia
+      tools.  It did not---making it effectively a second control with
+      lower performance, not a meaningful test of ambient exposure.
+\end{itemize}
+
 % ─────────────────────────────────────────────────────────
 % 3. RESULTS
 % ─────────────────────────────────────────────────────────
@@ -231,11 +304,13 @@ Asymmetric    & Route by backend speed             & 1.0 \\
 \subsection{Benchmark Rankings}
 
 Figure~\ref{fig:benchmark} shows aggregate benchmark scores ranked by
-performance.  The \textit{contrarian} condition achieves the highest score
-(92.9), outperforming control (84.7) by $+8.2$ points.  Six of seven
-Wikipedia conditions outperform control.  The lone exception is
-\textit{consilience}~(76.2), which ranks last despite building the most
-architecturally ambitious solution.
+performance.  Two conditions clearly separate from the pack:
+\textit{flaneur} (95.24) and \textit{biomimetic} (94.77) score
+${\sim}5$--6 points above control (89.39).  The remaining five Wikipedia
+conditions cluster within 0.6 points of control, forming an
+undifferentiated middle band from 89.20 (reflective) to 89.79
+(consilience).  Subtle (87.47) is the only condition that clearly
+underperforms control.
 
 \begin{figure*}[t]
 \centering
@@ -247,14 +322,14 @@ architecturally ambitious solution.
     width=\textwidth,
     height=5.8cm,
     xlabel={Benchmark Score},
-    xmin=70, xmax=98,
+    xmin=85, xmax=97,
     symbolic y coords={%
-      consil.,control,biomim.,reflect.,%
-      flaneur,subtle,explicit,contr.},
-    ytick={consil.,control,biomim.,reflect.,%
-      flaneur,subtle,explicit,contr.},
-    yticklabels={consil.,\textbf{control},biomim.,reflect.,%
-      flaneur,subtle,explicit,contr.},
+      subtle,reflect.,control,explicit,%
+      contr.,consil.,biomim.,flaneur},
+    ytick={subtle,reflect.,control,explicit,%
+      contr.,consil.,biomim.,flaneur},
+    yticklabels={subtle,reflect.,\textbf{control},explicit,%
+      contr.,consil.,biomim.,flaneur},
     yticklabel style={font=\small},
     ytick style={draw=none},
     bar width=7pt,
@@ -267,14 +342,14 @@ architecturally ambitious solution.
 ]
 \addplot[fill=wikiorange!70, draw=wikiorange]
   coordinates {
-    (76.2,consil.)
-    (84.7,control)
-    (85.5,biomim.)
-    (85.9,reflect.)
-    (89.1,flaneur)
-    (90.1,subtle)
-    (91.1,explicit)
-    (92.9,contr.)
+    (87.47,subtle)
+    (89.20,reflect.)
+    (89.39,control)
+    (89.47,explicit)
+    (89.74,contr.)
+    (89.79,consil.)
+    (94.77,biomim.)
+    (95.24,flaneur)
   };
 \end{axis}
 \end{tikzpicture}
@@ -290,10 +365,10 @@ architecturally ambitious solution.
     width=\textwidth,
     height=5.8cm,
     xlabel={Judge Margin vs.\ Control},
-    xmin=-5, xmax=25,
+    xmin=-8, xmax=13,
     symbolic y coords={%
-      subtle,flaneur,reflect.,biomim.,%
-      explicit,consil.,contr.},
+      flaneur,reflect.,subtle,contr.,%
+      explicit,biomim.,consil.},
     ytick=data,
     yticklabel style={font=\small},
     ytick style={draw=none},
@@ -309,23 +384,24 @@ architecturally ambitious solution.
 ]
 \addplot[fill=wikiorange!70, draw=wikiorange]
   coordinates {
-    (-2,subtle)
-    (0,flaneur)
-    (5,reflect.)
-    (7,biomim.)
-    (14,explicit)
-    (14,consil.)
-    (20,contr.)
+    (-6,flaneur)
+    (-4,reflect.)
+    (2,subtle)
+    (2,contr.)
+    (4,explicit)
+    (4,biomim.)
+    (10,consil.)
   };
 \end{axis}
 \end{tikzpicture}
 \subcaption{Blinded LLM judge margin vs.\ control (out of 110).
-Positive = Wikipedia wins.}
+Positive = Wikipedia condition wins.}
 \label{fig:judge}
 \end{minipage}
-\caption{Benchmark scores (left) and judge margins (right).  Six of seven
-Wikipedia conditions beat control on both measures, though the rankings
-diverge substantially (see Section~\ref{sec:divergence}).}
+\caption{Benchmark scores (left) and judge margins (right).  The two
+measures diverge sharply: flaneur ranks 1st on benchmarks but loses to
+control on the judge ($-6$).  Consilience ranks 3rd on benchmarks but
+wins the largest judge margin ($+10$).}
 \label{fig:bars}
 \end{figure*}
 
@@ -333,12 +409,18 @@ diverge substantially (see Section~\ref{sec:divergence}).}
 \subsection{Scenario Heatmap}
 
 Table~\ref{tab:heatmap} shows per-scenario scores for all conditions,
-sorted by aggregate rank.  Contrarian dominates degradation detection
-(0.99), recovery (0.97), cascading failure (0.94), and flapping resistance
-(0.95).  However, its proportional shedding approach yields the lowest
-priority protection score (0.84) among all conditions.  Biomimetic excels
-at asymmetric routing (0.98) via pheromone reinforcement but struggles
-with steady-state evenness~(0.68).
+sorted by aggregate rank.  The top two conditions dominate the same
+scenarios: cascading failure (flaneur 1.00, biomimetic 0.98) and
+asymmetric routing (flaneur 1.00, biomimetic 0.99).  These are the
+scenarios where the middle pack struggles most---control scores 0.87 and
+0.85 respectively.  Degradation detection also separates the leaders
+(flaneur 1.00, biomimetic 0.99) from control (0.85).  Recovery smoothness
+is the most uniform scenario, with all conditions scoring 0.80--0.85.
+
+Two conditions show notably weak asymmetric routing: consilience (0.52)
+and explicit (0.53).  Both use weighted-random selection that distributes
+load roughly evenly regardless of backend speed---a failure mode that
+costs them on this scenario but is masked by strong performance elsewhere.
 
 \begin{table*}[t]
 \centering\small
@@ -360,22 +442,22 @@ rank.  Color key:
 & \footnotesize{(w\,=\,2.0)} & \footnotesize{(w\,=\,1.5)}
 & \footnotesize{(w\,=\,1.0)} & \\
 \midrule
-contrarian   & \hc{0.99} & \hc{0.99} & \hc{0.84} & \hc{0.97}
-             & \hc{0.94} & \hc{0.95} & \hc{0.87} & 92.9 \\
-explicit     & \hc{0.95} & \hc{0.97} & \hc{0.99} & \hc{0.81}
-             & \hc{0.93} & \hc{0.83} & \hc{0.81} & 91.1 \\
-subtle       & \hc{1.00} & \hc{0.90} & \hc{0.99} & \hc{0.83}
-             & \hc{0.87} & \hc{0.86} & \hc{0.81} & 90.1 \\
-flaneur      & \hc{1.00} & \hc{0.79} & \hc{0.99} & \hc{0.84}
-             & \hc{0.90} & \hc{0.83} & \hc{0.89} & 89.1 \\
-reflective   & \hc{1.00} & \hc{0.77} & \hc{0.98} & \hc{0.83}
-             & \hc{0.78} & \hc{0.86} & \hc{0.77} & 85.9 \\
-biomimetic   & \hc{0.68} & \hc{0.91} & \hc{1.00} & \hc{0.74}
-             & \hc{0.82} & \hc{0.73} & \hc{0.98} & 85.5 \\
-control      & \hc{1.00} & \hc{0.58} & \hc{0.98} & \hc{0.90}
-             & \hc{0.78} & \hc{0.90} & \hc{0.77} & 84.7 \\
-consilience  & \hc{1.00} & \hc{0.18} & \hc{0.98} & \hc{0.83}
-             & \hc{0.71} & \hc{0.92} & \hc{0.77} & 76.2 \\
+flaneur      & \hc{0.95} & \hc{1.00} & \hc{1.00} & \hc{0.85}
+             & \hc{1.00} & \hc{0.84} & \hc{1.00} & 95.24 \\
+biomimetic   & \hc{0.97} & \hc{0.99} & \hc{1.00} & \hc{0.84}
+             & \hc{0.98} & \hc{0.84} & \hc{0.99} & 94.77 \\
+consilience  & \hc{0.97} & \hc{0.96} & \hc{0.96} & \hc{0.81}
+             & \hc{0.96} & \hc{0.91} & \hc{0.52} & 89.79 \\
+contrarian   & \hc{0.95} & \hc{0.94} & \hc{0.99} & \hc{0.83}
+             & \hc{0.88} & \hc{0.82} & \hc{0.79} & 89.74 \\
+explicit     & \hc{0.97} & \hc{0.92} & \hc{0.99} & \hc{0.83}
+             & \hc{0.93} & \hc{0.90} & \hc{0.53} & 89.47 \\
+control      & \hc{1.00} & \hc{0.85} & \hc{0.96} & \hc{0.83}
+             & \hc{0.87} & \hc{0.90} & \hc{0.85} & 89.39 \\
+reflective   & \hc{0.96} & \hc{0.90} & \hc{0.99} & \hc{0.83}
+             & \hc{0.86} & \hc{0.83} & \hc{0.80} & 89.20 \\
+subtle       & \hc{1.00} & \hc{0.83} & \hc{0.98} & \hc{0.80}
+             & \hc{0.82} & \hc{0.87} & \hc{0.77} & 87.47 \\
 \bottomrule
 \end{tabular}
 \end{table*}
@@ -384,65 +466,85 @@ consilience  & \hc{1.00} & \hc{0.18} & \hc{0.98} & \hc{0.83}
 \subsection{Judge Rankings}
 
 Figure~\ref{fig:judge} shows the blinded LLM judge margin for each
-condition versus control.  Contrarian achieves the largest margin ($+20$
-points), while consilience and explicit tie at $+14$.  The judge found a
-real bug in control's implementation during the contrarian
-comparison---a stale data deque that permanently locks out recovering
-backends.  Only \textit{subtle} loses to control ($-2$), having barely
-used Wikipedia tools.
+condition versus control.  Consilience achieves the largest margin ($+10$
+points), with the judge praising its AIMD recovery model, weighted-random
+selection for proportional degradation, and data-driven shed tiers.
+Biomimetic and explicit tie at $+4$.  Contrarian and subtle each win by
+$+2$.
 
+Two conditions \emph{lose} to control: reflective ($-4$) and flaneur
+($-6$).  The judge found real code-quality issues in flaneur---a
+mislabeled routing function and a no-op recovery transition---that do not
+affect benchmark scores but reflect lower design clarity.  Control scored
+between 60 and 68 across its seven pairings, introducing meaningful noise
+in the margins.
 
 % ── 3.4  Judge vs Benchmark Divergence ───────────────────
 \subsection{Judge vs.\ Benchmark Divergence}
 \label{sec:divergence}
 
-The judge and benchmark agree on the overall direction---Wikipedia
-conditions generally outperform control---but diverge sharply on three
-conditions:
+The judge and benchmark diverge more dramatically than in previous work.
+The most striking case:
 
 \begin{itemize}
-\item \textbf{Consilience}: Judge rank 1st (score 76/110); Benchmark rank
-  8th (76.2/100).  The judge praised its two-level shedding architecture
-  and sigmoid health functions.  The benchmark exposed a fatal blind
-  spot: degradation detection scored 0.18---it cannot detect a slowly
-  failing backend.
-\item \textbf{Subtle}: Judge rank 7th (score 56/110); Benchmark rank 3rd
-  (90.1/100).  The judge saw two nearly identical implementations and
-  marginally preferred control.  But subtle's code \emph{performs}
-  measurably better under fault scenarios.
-\item \textbf{Biomimetic}: Judge rank 4th (score 69/110); Benchmark rank
-  6th (85.5/100).  The judge rewarded novel ACO pheromone routing.  The
-  benchmark penalized uneven steady-state distribution~(0.68).
+\item \textbf{Flaneur}: Benchmark rank 1st (95.24); Judge margin $-6$
+  (control wins).  The benchmark rewards flaneur's near-perfect cascading
+  failure isolation (1.00) and asymmetric routing (1.00).  The judge
+  penalizes code-quality issues and awards no cross-domain insight
+  credit---because flaneur's research was on-topic, not cross-domain.
+\item \textbf{Consilience}: Benchmark rank 3rd (89.79, within 0.4 of
+  control); Judge rank 1st ($+10$ margin).  The judge praised AIMD
+  recovery and weighted-random selection.  The benchmark shows consilience
+  is dragged down by poor asymmetric routing (0.52)---its weighted-random
+  selection ignores backend speed.
+\item \textbf{Subtle}: Benchmark rank 8th (87.47); Judge margin $+2$.
+  The judge slightly preferred subtle's smooth weighted round-robin, but
+  the benchmark penalizes its slower degradation detection (0.83) and
+  weaker cascading failure handling (0.82).
 \end{itemize}
+
+The judge evaluates architecture and design reasoning.  The benchmark
+evaluates whether the code works under fault injection.  Each captures a
+different dimension of quality, and they can disagree sharply on the same
+implementation.
 
 % ── 3.5  Cost and Efficiency ─────────────────────────────
 \subsection{Cost and Efficiency}
 
-Figure~\ref{fig:cost} plots benchmark score against API cost.  Control is
-the most cost-efficient (\$0.85 for 84.7 points).  Among Wikipedia
-conditions, subtle achieves the best return (\$0.92 for 90.1 points),
-nearly matching control's efficiency.  Biomimetic is the least
-efficient (\$2.98 for 85.5 points).  Table~\ref{tab:efficiency} shows the
-full breakdown.
+Figure~\ref{fig:cost} plots benchmark score against API cost.
+Table~\ref{tab:efficiency} shows the full breakdown.  Subtle is the
+cheapest overall (\$0.68, 3:03) but scores lowest.  Control is the
+most cost-efficient at \$1.43 for 89.39 points (62.5 score/\$).
+Among Wikipedia conditions, flaneur achieves the best
+return---\$1.94 for 95.24 points (49.1 score/\$), the cheapest
+research condition and the highest score.  Biomimetic costs
+\$3.96 for 94.77 points.  Consilience is the most
+expensive at \$4.01 for only 0.4 points above control.
+
+Research time dominates cost for most conditions.  Flaneur's research
+completed in 426 seconds with 37 retrieval turns---the fastest
+research condition.  Consilience's research took 1,275 seconds
+with 79 turns and 769 seconds of synthesis, reflecting its instruction
+to find convergent patterns across five or more domains.
 
 \begin{table}[H]
 \centering\small
 \caption{Cost, efficiency, and code metrics.  Score/\$ = benchmark score
-per dollar of API cost.}
+per dollar of API cost.  Research time includes retrieval and synthesis.}
 \label{tab:efficiency}
-\begin{tabular}{@{}lrrrr@{}}
+\begin{tabular}{@{}lrrrrr@{}}
 \toprule
 \textbf{Condition} & \textbf{Time} & \textbf{Cost}
-  & \textbf{LOC} & \textbf{Score/\$} \\
+  & \textbf{LOC} & \textbf{Res.}  & \textbf{Sc./\$} \\
 \midrule
-control     & 4:03  & \$0.85 & 471 & 99.7 \\
-subtle      & 4:04  & \$0.92 & 378 & 97.9 \\
-reflective  & 5:36  & \$1.42 & 466 & 60.5 \\
-flaneur     & 7:49  & \$2.10 & 548 & 42.4 \\
-contrarian  & 9:21  & \$2.23 & 539 & 41.7 \\
-consilience & 9:17  & \$2.81 & 531 & 27.1 \\
-explicit    & 5:05  & \$2.92 & 534 & 31.2 \\
-biomimetic  & 12:07 & \$2.98 & 444 & 28.7 \\
+subtle      & 3:03  & \$0.68 & 407 &  ---  & 128.6 \\
+control     & 7:48  & \$1.43 & 414 &  ---  &  62.5 \\
+flaneur     & 9:45  & \$1.94 & 446 &  7:06 &  49.1 \\
+reflective  & 12:06 & \$2.55 & 428 &  8:42 &  35.0 \\
+explicit    & 13:52 & \$2.65 & 543 &  8:53 &  33.8 \\
+contrarian  & 14:02 & \$3.05 & 530 & 10:11 &  29.4 \\
+biomimetic  & 20:14 & \$3.96 & 728 & 11:58 &  23.9 \\
+consilience & 31:09 & \$4.01 & 437 & 21:15 &  22.4 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -450,32 +552,40 @@ biomimetic  & 12:07 & \$2.98 & 444 & 28.7 \\
 % ── 3.6  Wikipedia Usage ─────────────────────────────────
 \subsection{Wikipedia Usage}
 
-Table~\ref{tab:wiki} shows research effort versus actual knowledge
-extraction.  Explicit spent the most subagent tokens (2,894) but
-referenced zero Wikipedia articles in its final code.  Contrarian read
-the fewest articles among active conditions (2) but extracted the most
-actionable insight---power-of-two-choices routing became its core
-algorithm and the Mars Pathfinder case motivated its asymmetric EWMA.
+Table~\ref{tab:wiki} shows research effort versus knowledge extraction.
+Six conditions actively retrieved Wikipedia articles; control and subtle
+did not.  All six active conditions read 9--12 articles each---a
+narrow range that suggests the retrieval pipeline converges on a
+similar volume regardless of persona.
+
+The \emph{content} of the articles varies dramatically.  Biomimetic read
+exclusively biological articles (allostasis, homeostasis, apoptosis,
+torpor, optimal foraging theory).  Contrarian focused on failure modes
+(systemic risk, demand response, C10k problem).  But flaneur---instructed
+to random-walk---read fault tolerance, thundering herd problem,
+consistent hashing, weighted round-robin, and deficit round-robin.
+Every article is directly relevant to load balancing.  The flaneur
+\emph{defected from its research persona}, searching on-topic articles
+instead of exploring randomly (see Section~\ref{sec:flaneur}).
 
 \begin{table}[H]
 \centering\small
-\caption{Wikipedia usage per condition.  ``Tokens'' = subagent output
-tokens; ``Articles'' = Wikipedia articles visibly referenced in the final
-implementation.}
+\caption{Wikipedia usage per condition.  ``Tokens'' = research subagent
+output tokens; ``Articles'' = articles read from retrieval manifest.}
 \label{tab:wiki}
-\begin{tabular}{@{}lrrp{2.8cm}@{}}
+\begin{tabular}{@{}lrrp{2.5cm}@{}}
 \toprule
 \textbf{Cond.} & \textbf{Tokens} & \textbf{Art.}
   & \textbf{Key Sources} \\
 \midrule
-control     & 108   & 0 & --- \\
-subtle      & 108   & 0 & Never found tools \\
-explicit    & 2,894 & 0 & Research didn't transfer \\
-reflective  & 1,456 & 4 & Gmail outage, NE blackout \\
-flaneur     & 1,707 & 6 & Monocoque, Deperdussin \\
-consilience & 2,238 & 6 & UFLS, ISR, triage \\
-biomimetic  & 1,980 & 5 & Baroreceptors, ACO \\
-contrarian  & 2,054 & 2 & Mars Pathfinder, Po2C \\
+control     &     0 &  0 & --- \\
+subtle      &     0 &  0 & Tools not discovered \\
+explicit    & 5,101 & 11 & Load shedding, DiffServ \\
+reflective  & 3,832 & 11 & Circuit breaker, C10k \\
+flaneur     & 7,052 &  9 & Fault tolerance, WRR \\
+consilience & 4,814 & 12 & TCP cong., HRA \\
+biomimetic  & 6,892 &  9 & Allostasis, torpor \\
+contrarian  & 6,088 &  9 & Systemic risk, C10k \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -490,8 +600,8 @@ contrarian  & 2,054 & 2 & Mars Pathfinder, Po2C \\
     height=5.5cm,
     xlabel={API Cost (USD)},
     ylabel={Benchmark Score},
-    xmin=0.5, xmax=3.4,
-    ymin=73, ymax=96,
+    xmin=0.4, xmax=4.5,
+    ymin=85, ymax=97,
     grid=major,
     grid style={dotted,gray!40},
     only marks,
@@ -499,31 +609,31 @@ contrarian  & 2,054 & 2 & Mars Pathfinder, Po2C \\
 ]
 % Control point (blue square)
 \addplot[controlblue, mark=square*, mark size=3pt]
-  coordinates {(0.85,84.7)};
+  coordinates {(1.43,89.39)};
 % Wiki points (orange circles)
 \addplot[wikiorange, mark=*, mark size=2.5pt]
   coordinates {
-    (0.92,90.1)
-    (2.92,91.1)
-    (1.42,85.9)
-    (2.10,89.1)
-    (2.81,76.2)
-    (2.98,85.5)
-    (2.23,92.9)
+    (0.68,87.47)
+    (2.65,89.47)
+    (2.55,89.20)
+    (1.94,95.24)
+    (4.01,89.79)
+    (3.96,94.77)
+    (3.05,89.74)
   };
 % Labels
-\node[font=\tiny, anchor=south west] at (axis cs:0.85,84.7) {control};
-\node[font=\tiny, anchor=south west] at (axis cs:0.92,90.1) {subtle};
-\node[font=\tiny, anchor=south east] at (axis cs:2.92,91.1) {explicit};
-\node[font=\tiny, anchor=south west] at (axis cs:1.42,85.9) {reflective};
-\node[font=\tiny, anchor=south east] at (axis cs:2.10,89.1) {flaneur};
-\node[font=\tiny, anchor=north east] at (axis cs:2.81,76.2) {consilience};
-\node[font=\tiny, anchor=north west] at (axis cs:2.98,85.5) {biomimetic};
-\node[font=\tiny, anchor=south west] at (axis cs:2.23,92.9) {contrarian};
+\node[font=\tiny, anchor=south west] at (axis cs:1.43,89.39) {control};
+\node[font=\tiny, anchor=south east] at (axis cs:0.68,87.47) {subtle};
+\node[font=\tiny, anchor=south west] at (axis cs:2.65,89.47) {explicit};
+\node[font=\tiny, anchor=north west] at (axis cs:2.55,89.20) {reflective};
+\node[font=\tiny, anchor=south west] at (axis cs:1.94,95.24) {flaneur};
+\node[font=\tiny, anchor=south west] at (axis cs:4.01,89.79) {consilience};
+\node[font=\tiny, anchor=south east] at (axis cs:3.96,94.77) {biomimetic};
+\node[font=\tiny, anchor=south west] at (axis cs:3.05,89.74) {contrarian};
 \end{axis}
 \end{tikzpicture}
-\subcaption{Benchmark score vs.\ API cost.  Control (blue square) is the
-most cost-efficient; contrarian delivers the best score at 2.6$\times$ cost.}
+\subcaption{Benchmark score vs.\ API cost.  Control (blue square);
+flaneur delivers the highest score at 1.4$\times$ control's cost.}
 \label{fig:cost}
 \end{minipage}%
 \hfill%
@@ -533,41 +643,42 @@ most cost-efficient; contrarian delivers the best score at 2.6$\times$ cost.}
 \begin{axis}[
     width=\textwidth,
     height=5.5cm,
-    xlabel={Subagent Tokens},
-    ylabel={Articles Referenced},
-    xmin=0, xmax=3200,
-    ymin=-0.5, ymax=7,
+    xlabel={Research Output Tokens},
+    ylabel={Articles Read},
+    xmin=0, xmax=7500,
+    ymin=-0.5, ymax=14,
     grid=major,
     grid style={dotted,gray!40},
     only marks,
     mark size=2.5pt,
 ]
-% Points
+% Control + subtle (no research)
 \addplot[controlblue, mark=square*, mark size=3pt]
-  coordinates {(108,0)};
+  coordinates {(0,0)};
+% Wiki points (orange circles)
 \addplot[wikiorange, mark=*, mark size=2.5pt]
   coordinates {
-    (108,0)
-    (2894,0)
-    (1456,4)
-    (1707,6)
-    (2238,6)
-    (1980,5)
-    (2054,2)
+    (0,0)
+    (5101,11)
+    (3832,11)
+    (7052,9)
+    (4814,12)
+    (6892,9)
+    (6088,9)
   };
 % Labels
-\node[font=\tiny, anchor=south east] at (axis cs:108,0) {ctrl};
-\node[font=\tiny, anchor=south west] at (axis cs:160,0) {sub};
-\node[font=\tiny, anchor=north west] at (axis cs:2894,0) {explicit};
-\node[font=\tiny, anchor=south west] at (axis cs:1456,4) {reflective};
-\node[font=\tiny, anchor=south east] at (axis cs:1707,6) {flaneur};
-\node[font=\tiny, anchor=south west] at (axis cs:2238,6) {consilience};
-\node[font=\tiny, anchor=south east] at (axis cs:1980,5) {biomimetic};
-\node[font=\tiny, anchor=south west] at (axis cs:2054,2) {contrarian};
+\node[font=\tiny, anchor=south east] at (axis cs:0,0) {ctrl};
+\node[font=\tiny, anchor=south west] at (axis cs:100,0) {sub};
+\node[font=\tiny, anchor=south west] at (axis cs:5101,11) {explicit};
+\node[font=\tiny, anchor=south east] at (axis cs:3832,11) {reflective};
+\node[font=\tiny, anchor=south west] at (axis cs:7052,9) {flaneur};
+\node[font=\tiny, anchor=south west] at (axis cs:4814,12) {consilience};
+\node[font=\tiny, anchor=south east] at (axis cs:6892,9) {biomimetic};
+\node[font=\tiny, anchor=south west] at (axis cs:6088,9) {contrarian};
 \end{axis}
 \end{tikzpicture}
-\subcaption{Research effort vs.\ knowledge extraction.  Explicit researched
-the most but extracted nothing; contrarian extracted high-impact insights.}
+\subcaption{Research effort vs.\ knowledge extraction.  All active
+conditions read 9--12 articles; token usage varies 2$\times$.}
 \label{fig:wiki}
 \end{minipage}
 \caption{Cost--performance trade-off (left) and Wikipedia research
@@ -584,137 +695,186 @@ patterns (right).}
 
 Table~\ref{tab:arch} summarizes the architectural choices made by each
 condition.  Despite identical problem specifications, the eight agents
-produced strikingly different designs.
+produced meaningfully different designs.
 
 \begin{table*}[t]
 \centering\small
 \caption{Architectural comparison across conditions.  WLC = weighted
-least-connections; WRR = weighted round-robin; CB = circuit breaker;
-EWMA = exponential weighted moving average; AIMD = additive increase /
-multiplicative decrease; ACO = ant colony optimization; Po2RC = power-of-two
-random choices.}
+least-connections; WRR = weighted round-robin; SWRR = smooth weighted
+round-robin; AIMD = additive increase / multiplicative decrease;
+EMA/EWMA = (exponential) weighted moving average.}
 \label{tab:arch}
 \begin{tabular}{@{}lllllr@{}}
 \toprule
 \textbf{Condition} & \textbf{Routing} & \textbf{Health Tracking}
   & \textbf{Shedding} & \textbf{Recovery} & \textbf{LOC} \\
 \midrule
-control     & WLC          & EWMA + sliding window
-  & Fixed thresholds       & Quadratic ramp     & 471 \\
-explicit    & CB states    & EWMA + circuit breaker
-  & Hysteresis (70/80\%)   & AIMD               & 534 \\
-subtle      & WLC          & Dual-EMA
-  & Fixed thresholds       & Fast weight ramp   & 378 \\
-reflective  & WLC          & Composite score + CB
-  & AIMD thresholds        & AIMD               & 466 \\
-flaneur     & WRR          & Geometric mean (3 axes)
-  & Hysteresis + 4-state   & State machine      & 548 \\
-consilience & Two-level    & Sigmoid from latency
-  & Staged + UFLS          & Asymmetric 6:1     & 531 \\
-biomimetic  & ACO pheromone & Baroreceptor sensing
-  & ISR-like progressive   & Pheromone rebuild  & 444 \\
-contrarian  & Po2RC        & Asymmetric EWMA
-  & Proportional admission & Adaptive ramp      & 539 \\
+control     & WLC             & EMA ($\alpha{=}0.4$)
+  & Priority tiers            & Asym.\ ramp ($+$0.15/$-$0.4)  & 414 \\
+flaneur     & Weighted RR     & EWMA + synthetic latency
+  & Demand-response           & No-volt release ($\times$0.5/$+$0.10) & 446 \\
+biomimetic  & Foraging (E/h)  & Trail pheromone EMA
+  & Allostatic redistrib.     & 4-state torpor machine & 728 \\
+consilience & Weighted random  & AIMD weight
+  & Tiered escalation         & Probe-gated ($+$0.05) & 437 \\
+contrarian  & Weighted LC      & EMA + latency tiers
+  & Multi-stage UFLS          & AIMD ($\times$0.5/$+$0.05)    & 530 \\
+explicit    & Weighted random  & Graduated continuous
+  & Capacity-coupled          & Linear ($+$0.05)      & 543 \\
+reflective  & SWRR (Nginx)    & EMA + sliding window
+  & Priority tiers            & Asym.\ ramp ($+$0.15/$-$0.3)  & 428 \\
+subtle      & WLC             & Graduated continuous
+  & Staged tiers              & Asym.\ ramp ($+$0.15/$-$0.4)  & 407 \\
 \bottomrule
 \end{tabular}
 \end{table*}
 
-\textbf{Control} (471~LOC) implements weighted least-connections routing
-with EWMA latency and sliding-window success rate.  Priority-based
-shedding activates at fixed capacity thresholds.  A solid, no-frills
-baseline.
+\textbf{Control} (414~LOC) implements weighted least-connections routing
+with EMA health tracking ($\alpha{=}0.4$).  Priority-based shedding
+activates at fixed capacity thresholds (background$<$70\%, normal$<$40\%,
+critical$<$15\%).  An asymmetric weight ramp ($+$0.15/tick up,
+$-$0.4/tick down) prevents thundering herd on recovery.  A solid,
+conventional baseline.
 
-\textbf{Explicit} (534~LOC) builds a three-state circuit breaker
-(CLOSED/OPEN/HALF\_OPEN) with AIMD capacity management borrowed from TCP
-congestion control.  Hysteresis on shedding thresholds (enter at 70\%,
-exit at 80\%) prevents oscillation---a structural advantage the judge
-highlighted.
+\textbf{Flaneur} (446~LOC) uses weighted round-robin with a scoring
+function: \texttt{weight/(1+avg\_latency/100)}, normalizing latency
+relative to a 100ms baseline.  Failed requests inject a synthetic 500ms
+latency penalty into the EMA, making health tracking highly responsive.
+Its ``no-volt release'' recovery---fast ramp-down ($\times$0.5) and slow
+ramp-up ($+$0.10/tick)---mirrors power-grid demand-response patterns.
+The implementation excels at cascading failure (1.00) and asymmetric
+routing (1.00) because latency-weighted scoring naturally routes away from
+slow backends.
 
-\textbf{Subtle} (378~LOC) is the leanest implementation.  Architecturally
-near-identical to control, it never discovered the Wikipedia tools.  Yet
-it benchmarks 3rd, suggesting the contract-based specification alone
-improved code quality.
+\textbf{Biomimetic} (728~LOC) is the most architecturally distinctive.
+Routing uses optimal foraging theory: each backend's ``profitability''
+is health/latency (energy per handling time), and the router selects from
+the top-50\% profitability tier.  A four-state machine
+(HEALTHY$\to$DEGRADED$\to$TORPID$\to$RECOVERING) governs backend
+lifecycle---torpid backends receive probes only, and recovery caps
+requests at \texttt{max(1, round(progress$\times$5))}.  This is the only
+condition where biological analogies produced structural---not merely
+terminological---differences in the architecture.
 
-\textbf{Reflective} (466~LOC) overlays a circuit breaker on weighted
-least-connections, citing the 2003 Northeast blackout and Gmail 2012
-outage.  Conservative and well-proportioned---the ``measure twice''
-approach.
+\textbf{Consilience} (437~LOC) implements AIMD-based weighted random
+selection.  Multiplicative decrease ($\times$0.5) on failure, additive
+increase ($+$0.05/tick) on recovery, but recovery is gated through probes:
+only probe outcomes trigger additive increase, rate-limiting recovery to
+one tick at a time.  Despite referencing five convergent patterns
+(TCP congestion, power-grid UFLS, ALOHA, high-redundancy actuation,
+DiffServ), its asymmetric routing fails (0.52)---weighted-random
+distributes load evenly regardless of backend speed.
 
-\textbf{Flaneur} (548~LOC) uses weighted round-robin with three
-independent health axes (latency, error rate, probe latency) combined via
-geometric mean.  Inspired by monocoque structures from a random Wikipedia
-walk, its four-state machine includes explicit hysteresis.
+\textbf{Contrarian} (530~LOC) combines weighted-random routing with
+active-request tracking (a least-connections variant).  Multi-tier latency
+sensitivity distinguishes ``degraded'' (300ms) from ``severe'' (800ms)
+with different multiplicative decreases.  Its multi-stage shedding
+escalates through four thresholds.  The adversarial research strategy
+produced careful fault detection but no structural innovation.
 
-\textbf{Consilience} (531~LOC) is the most ambitious: two-level shedding
-with per-backend stage gating and system-level UFLS (from power grid
-engineering), sigmoid health scoring, and six cross-domain references.
-The most sophisticated architecture---and the worst benchmark score.
+\textbf{Explicit} (543~LOC) implements weighted-random selection with
+graduated continuous health scoring---latency is linearly interpolated
+between 50ms (healthy) and 500ms (failed), avoiding binary
+up/down decisions.  Linear recovery ($+$0.05/tick) avoids oscillation
+in small-$N$ deployments.
 
-\textbf{Biomimetic} (444~LOC) implements pheromone-weighted ACO routing
-with 10\% random exploration.  Baroreceptor sensing (latency derivative)
-provides predictive detection.  The most biologically faithful
-implementation excels at asymmetric backends (0.98) but introduces
-variance that hurts steady-state~(0.68).
+\textbf{Reflective} (428~LOC) uses smooth weighted round-robin
+(Nginx's SWRR algorithm), the only condition with deterministic
+routing.  A three-state enum (HEALTHY/DEGRADED/UNHEALTHY) with
+dual-threshold transitions provides clean state management.
 
-\textbf{Contrarian} (539~LOC) uses power-of-two-random-choices routing
-(pick two candidates, route to the better one).  Asymmetric EWMA---fast
-degrade ($\alpha{=}0.4$), slow recover ($\alpha{=}0.08$)---prevents
-detection lag.  Proportional admission replaces cliff-based shedding.
-The adversarial research strategy produced the highest benchmark score.
+\textbf{Subtle} (407~LOC) is architecturally near-identical to control:
+weighted least-connections with graduated health scoring and staged
+shedding.  It never discovered the Wikipedia tools during its run,
+confirming the retrieval manifest's zero-article record.
 
 % ─────────────────────────────────────────────────────────
 % 5. DISCUSSION
 % ─────────────────────────────────────────────────────────
 \section{Discussion}
 
-Six conclusions emerge from this experiment.
+Six observations emerge from this experiment.
 
-\textbf{1.\ Adversarial research produces the most robust code.}
-Contrarian actively searched for what could go wrong before coding.  This
-led to the discovery of the recovery deadlock bug (stale data deque with
-zero-weight backends), which it avoided and control did not.  The result
-was the highest benchmark score (92.9) and the largest judge margin
-($+20$).
+\textbf{1.\ Cross-domain research can improve functional benchmarks
+by ${\sim}6$ points---but the effect is concentrated.}  Flaneur and
+biomimetic score 5--6 points above control, but the gap comes almost
+entirely from three scenarios: cascading failure, asymmetric routing,
+and degradation detection.  On recovery, priority protection, and
+flapping, they perform comparably to the middle pack.  The improvement
+is real but narrow---specific failure scenarios where latency-aware or
+profitability-based routing excels, not a general quality lift.
 
-\textbf{2.\ Architectural ambition can hurt.}  Consilience built the most
-sophisticated architecture (two-level shedding, sigmoid health, six
-cross-domain references) but scored last on benchmarks (76.2).  Its
-degradation detection scored 0.18---a basic scenario that six other
-conditions handled adequately.  Sophistication is not a proxy for
-correctness.
+\textbf{2.\ The flaneur defected from its instructions---and this is
+the most interesting finding.}
+\label{sec:flaneur}
+The flaneur was instructed to ``take a random walk through Wikipedia; let
+connections emerge.''  Its retrieval manifest shows it read: fault
+tolerance, thundering herd problem, exponential backoff, consistent
+hashing, weighted round-robin.  Every article is directly relevant to load
+balancing.  The agent ignored its creative persona and searched for what
+it already knew was relevant.
 
-\textbf{3.\ The judge and benchmark measure different things.}  The judge
-evaluates architecture, novelty, and cross-domain insight.  The benchmark
-evaluates whether the code actually works under fault injection.  Both are
-needed: the judge alone would rank consilience 1st; the benchmark alone
-would miss biomimetic's creative value.  For production evaluation,
-behavioral benchmarks should take precedence.
+This is simultaneously an \emph{apparatus flaw} and a \emph{finding
+about agent behavior}.  As an apparatus flaw: we cannot claim the flaneur
+condition tests undirected exploration, because undirected exploration
+didn't happen.  As a behavioral finding: when an LLM agent is given a
+creative research instruction but knows the problem domain, it
+gravitates toward on-topic material.  The retrieval verification catches
+\emph{whether} articles were read, not \emph{how} they were found.
+Enforcing research strategy---as opposed to research access---is an open
+problem for agent experiment design.
 
-\textbf{4.\ Subtle is surprisingly competitive.}  Despite barely using
-Wikipedia (108 subagent tokens, zero articles), subtle benchmarks 3rd
-(90.1).  This may indicate that the contract-based problem
-specification---with its explicit interface, enumerated priorities, and
-behavioral requirements---does more work than the Wikipedia access.
+\textbf{3.\ Biomimetic is the only genuine cross-domain success.}
+Of the seven Wikipedia conditions, biomimetic is the only one that
+(a) followed its cross-domain research instructions (reading articles on
+allostasis, homeostasis, apoptosis, torpor, and optimal foraging theory),
+(b) produced a structurally distinct architecture (four-state torpor
+machine, foraging-profitability routing), and (c) scored well on
+benchmarks (94.77, rank 2).  However, it is also the most
+expensive (\$3.96, 2.8$\times$ control) and produced the most code
+(728 LOC vs.\ 414 control).  The structural translation from biological
+concepts to software design appears to require significant additional
+compute.
 
-\textbf{5.\ Cost scales with research depth, not quality.}  Biomimetic
-cost 3.5$\times$ control for $+0.8$ benchmark points.  Contrarian cost
-2.6$\times$ for $+8.2$ points.  The correlation between cost and quality
-is weak---the cheapest Wikipedia condition (subtle, \$0.92) outperforms
-the most expensive (biomimetic, \$2.98) by 4.6 points.
+\textbf{4.\ The judge and benchmark measure orthogonal things.}
+The flaneur divergence is the starkest example: benchmark rank~1st,
+judge rank~last ($-6$).  But the pattern extends further.  Consilience
+wins the largest judge margin ($+10$) while sitting at 89.79 on the
+benchmark---0.4 points from control.  The judge rewards architectural
+ambition, cross-domain insight, and design reasoning.  The benchmark
+rewards whether the code actually isolates failures and routes
+traffic correctly.  Neither is wrong, but for production evaluation,
+\emph{behavioral benchmarks should take precedence}---a load balancer
+that isolates cascading failures matters more than one the judge finds
+architecturally interesting.
 
-\textbf{6.\ Creative approaches trade consistency for adaptiveness.}
-Biomimetic's ACO routing excels at asymmetric backends (0.98) but
-introduces variance that hurts steady-state (0.68) and flapping resistance
-(0.73).  Standard approaches are more predictable; novel algorithms
-require broader scenario coverage to validate.
+\textbf{5.\ The middle pack is noise.}  Five conditions
+(consilience, contrarian, explicit, control, reflective) cluster in a
+0.6-point band from 89.20 to 89.79.  With $N{=}1$ per condition, we
+cannot distinguish this from variance.  The experiment has statistical
+power to detect flaneur and biomimetic's ${\sim}6$-point gap but cannot
+make meaningful claims about conditions separated by less than a point.
+
+\textbf{6.\ The compute-time confound is real but not decisive.}
+Research conditions consume 3--31 minutes of total time versus
+control's 8 minutes.  However, flaneur's \emph{coding} stage took only
+159 seconds---less than subtle (183s) and far less than control
+(468s)---yet produced the highest score.  Biomimetic's coding stage
+(496s) was comparable to control's.  The confound is real---more total
+compute is available---but the coding-time data suggests the research
+\emph{content}, not merely the extra thinking time, drives the effect
+for the top two conditions.
 
 \paragraph{Limitations.}
 This is a single-problem ($N{=}1$), single-model (Claude), single-judge
-experiment.  The results may not generalize to other problem types,
-models, or evaluation approaches.  Each condition was run once, so we
-cannot estimate within-condition variance.  The LLM judge's scores vary
-across comparisons (control scored between 52 and 63 across seven
-pairings), introducing noise in the margin estimates.
+experiment.  Each condition was run once, so we cannot estimate
+within-condition variance.  The LLM judge's control scores varied
+between 60 and 68 across seven pairings, introducing noise in the
+margin estimates.  The flaneur defection means we tested six research
+personas, not seven---the flaneur result is interesting but does not
+test undirected exploration as designed.  Parametric knowledge
+contamination means Wikipedia may be reinforcing what the model already
+knows rather than introducing genuinely new information.
 
 % ─────────────────────────────────────────────────────────
 % 6. CONCLUSION
@@ -722,13 +882,26 @@ pairings), introducing noise in the margin estimates.
 \enlargethispage{2\baselineskip}
 \section{Conclusion}
 
-Wikipedia access can improve LLM-generated code, but the research
-strategy matters more than the access itself.  Adversarial research
-(contrarian) produced the most robust implementation by finding failure
-modes before they became bugs.  Undirected or overly ambitious research
-strategies yielded diminishing or negative returns.  Evaluating generated
-code requires multiple complementary methods---design-quality judges and
-behavioral benchmarks capture different dimensions of quality and can
-disagree sharply on the same implementation.
+Wikipedia access can improve LLM-generated code, but the effect is
+narrower and more conditional than a headline score suggests.  Two of
+seven Wikipedia conditions clearly outperformed control---flaneur by 5.85
+points and biomimetic by 5.38---while five clustered within 0.6 points of
+the baseline.  The improvement concentrates in specific failure scenarios
+(cascading failure, asymmetric routing, degradation detection), not a
+general quality lift.
+
+The experiment's most interesting finding may be its flaws.  The flaneur
+did not random-walk---it searched on-topic.  The subtle condition did not
+discover its tools.  The judge and benchmark disagree sharply on the
+same code.  These failures expose real challenges in agent experiment
+design: enforcing research strategy compliance, separating Wikipedia's
+contribution from parametric knowledge, and choosing evaluation methods
+that align with the quality dimensions that matter.
+
+Biomimetic stands out as the only condition that followed its cross-domain
+instructions, produced a structurally distinct architecture, and scored
+well---suggesting that when structural translation from another domain
+actually happens, the results can be meaningful.  Whether this transfers
+to other problem types, at larger $N$, remains an open question.
 
 \end{document}
