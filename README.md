@@ -82,26 +82,79 @@ Explicit runs take ~2x longer on average (534s vs 288s for control) and produce 
 
 Explicit costs 2.5x more than control ($30.15 vs $12.21), driven by wiki-explorer subagent runs on Haiku. The starkest example: race-condition cost $2.50 explicit vs $0.44 control for a tie result. Reflective ($12.83) and subtle ($9.63) are comparable to control — subtle actually costs *less* because it rarely discovered or used the Wikipedia tools.
 
-## Results — Wave 2
+## Results — Wave 2: Load Balancer (all 8 conditions)
 
-*In progress.* Wave 2 adds 4 new conditions (flaneur, consilience, biomimetic, contrarian) and deterministic benchmarks. Results will be published here once all 8 conditions complete across all 10 problems.
+All 8 conditions ran against the load balancer problem with a three-stage pipeline (Retrieval → Synthesis → Coding) and both a deterministic benchmark (7 fault scenarios, 0–100) and a blinded LLM judge.
 
-## Key Findings (Wave 1)
+### Benchmark Rankings
+
+Two conditions clearly separate from the pack. The remaining five Wikipedia conditions cluster within 0.6 points of control — essentially noise at N=1.
+
+| Rank | Condition | Benchmark | Judge Margin | Cost | Time |
+|:----:|-----------|:---------:|:------------:|:----:|:----:|
+| 1 | **flaneur** | **95.24** | -6 | $1.94 | 9:45 |
+| 2 | **biomimetic** | **94.77** | +4 | $3.96 | 20:14 |
+| 3 | consilience | 89.79 | +10 | $4.01 | 31:09 |
+| 4 | contrarian | 89.74 | +2 | $3.05 | 14:02 |
+| 5 | explicit | 89.47 | +4 | $2.65 | 13:52 |
+| 6 | **control** | **89.39** | — | $1.43 | 7:48 |
+| 7 | reflective | 89.20 | -4 | $2.55 | 12:06 |
+| 8 | subtle | 87.47 | +2 | $0.68 | 3:03 |
+
+### The flaneur defection
+
+The flaneur was instructed to "take a random walk through Wikipedia; let connections emerge." Its retrieval manifest shows it read: fault tolerance, thundering herd problem, exponential backoff, consistent hashing, weighted round-robin. **Every article is directly relevant to load balancing.** The agent ignored its creative persona and searched for what it already knew was relevant.
+
+This is simultaneously an *apparatus flaw* (we can't claim the flaneur tests undirected exploration) and a *behavioral finding* (agents gravitate toward on-topic material regardless of creative instructions).
+
+### Judge vs. benchmark divergence
+
+The most dramatic disagreement: flaneur ranks **1st on benchmarks** (95.24) but **loses to control on the judge** (-6 margin). The judge found real code-quality issues (mislabeled routing function, no-op recovery transition) that don't affect benchmark scores. Consilience shows the inverse: wins the **largest judge margin** (+10) while sitting 0.4 points from control on the benchmark.
+
+### The only genuine cross-domain success
+
+Biomimetic is the only condition that (a) followed its cross-domain research instructions (reading about allostasis, torpor, optimal foraging theory), (b) produced a structurally distinct architecture (4-state torpor machine, foraging-profitability routing), and (c) scored well (94.77, rank 2).
+
+> Full analysis: [`paper/01-load-balancer.tex`](paper/01-load-balancer.tex)
+
+## Key Findings
+
+### Wave 2 (Load Balancer, all 8 conditions)
+
+**1. Cross-domain research can improve functional benchmarks by ~6 points — but the effect is concentrated.**
+Flaneur and biomimetic score 5–6 points above control, but the gap comes almost entirely from three scenarios: cascading failure, asymmetric routing, and degradation detection. On recovery, priority protection, and flapping, they perform comparably to the middle pack.
+
+**2. Agents don't follow creative research instructions when they know the answer.**
+The flaneur defection is the experiment's most interesting finding. When given a creative research persona but domain knowledge of the problem, the agent searched directly for relevant articles instead of random-walking. Research strategy *enforcement* — as opposed to research *access* — is an open problem for agent experiment design.
+
+**3. Biomimetic is the only genuine cross-domain success.**
+Of seven Wikipedia conditions, only biomimetic followed its cross-domain instructions, produced a structurally distinct architecture, and scored well. The structural translation from biological concepts to software design appears to require significant additional compute ($3.96, 2.8x control).
+
+**4. Judge and benchmark measure orthogonal things.**
+For production evaluation, behavioral benchmarks should take precedence — a load balancer that isolates cascading failures matters more than one the judge finds architecturally interesting.
+
+**5. The middle pack is noise.**
+Five conditions (consilience, contrarian, explicit, control, reflective) cluster in a 0.6-point band. With N=1 per condition, we cannot distinguish this from variance.
+
+**6. The compute-time confound is real but not decisive.**
+Research conditions consume 3–31 minutes vs control's 8, but flaneur's *coding* stage took only 159 seconds (less than control's 468s) yet scored highest.
+
+### Wave 1 (10 problems, 4 conditions)
 
 **1. Explicit Wikipedia access is the strongest condition, but not consistently.**
 At 5-3-2 (W-L-T), explicit produces the most dramatic wins but also real losses. When it works, it works by surfacing algorithms the agent wouldn't otherwise consider. When it fails, the research phase introduces overhead or the agent over-engineers based on what it read.
 
 **2. The reflective condition avoids losses but rarely wins decisively.**
-At 3-2-5, half of reflective's results are ties. Its philosophy — "what has been tried before, and what went wrong?" — acts as a conservative filter. It shines on problems where proportionality matters (load balancer, cache eviction) but adds little on mechanical tasks (it correctly stays silent on BST, CSV, debug).
+At 3-2-5, half of reflective's results are ties. Its philosophy — "what has been tried before, and what went wrong?" — acts as a conservative filter.
 
 **3. The subtle condition barely uses Wikipedia.**
-Subagent output tokens (a proxy for wiki tool usage) average ~430 for subtle vs ~4300 for explicit, against a ~350 control baseline. The agent almost never discovers the Wikipedia tools on its own. Subtle is effectively a second control with a slightly different runtime environment.
+The agent almost never discovers the Wikipedia tools on its own. Subtle is effectively a second control.
 
 **4. Problem type determines whether Wikipedia helps.**
-Cross-domain design problems (routing, cache eviction, load balancer, recommendation) show the widest score spreads. Standard tasks (debug, BST, CSV) show near-zero deltas. This matches the hypothesis: lateral knowledge matters when algorithm selection matters.
+Cross-domain design problems show the widest score spreads. Standard tasks show near-zero deltas. Lateral knowledge matters when algorithm selection matters.
 
 **5. The evaluation methodology is fragile.**
-N=1 per cell, single LLM judge, nondeterministic sampling. Re-running the judge on the same code with a different random A/B assignment produced different aggregate rankings. Individual comparisons are informative; aggregate W-L-T tallies should be interpreted cautiously.
+N=1 per cell, single LLM judge, nondeterministic sampling. Individual comparisons are informative; aggregate tallies should be interpreted cautiously.
 
 ## Test Suite
 
