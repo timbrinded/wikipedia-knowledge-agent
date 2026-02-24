@@ -26,6 +26,109 @@ CLAUDE_CMD="${CLAUDE_CMD:-claude}"
 PROBLEMS="${PROBLEMS:-$(ls "$PROBLEMS_DIR"/*.md | sort)}"
 CONDITIONS="${CONDITIONS:-control explicit subtle reflective flaneur consilience biomimetic contrarian}"
 
+# Common JSON schema for retrieval output — shared across all conditions.
+# The retrieval agent MUST output valid JSON matching this schema.
+# The synthesis agent receives this JSON as its input.
+read -r -d '' RETRIEVAL_SCHEMA << 'SCHEMAEOF' || true
+{
+  "searches": [
+    {
+      "query": "the exact shell command you ran (rg, shuf, head, etc.)",
+      "results": ["data/articles/xx/article-slug.txt", "..."]
+    }
+  ],
+  "context_snippets": [
+    {
+      "query": "rg -i -m3 -C5 \"term\" data/articles/xx/article-slug.txt",
+      "file": "data/articles/xx/article-slug.txt",
+      "snippet": "...verbatim text surrounding the match..."
+    }
+  ],
+  "articles_read": [
+    {
+      "path": "data/articles/xx/article-slug.txt",
+      "key_quotes": [
+        "...verbatim passage from the article...",
+        "...another verbatim passage..."
+      ]
+    }
+  ]
+}
+SCHEMAEOF
+
+# Condition-specific retrieval output examples (embedded in the prompt as a concrete target)
+retrieval_output_example() {
+    local condition="$1"
+    case "$condition" in
+        flaneur) cat << 'EXEOF'
+{
+  "searches": [
+    {"query": "shuf -n 1 data/index/titles.txt", "results": ["Ottoman_trade_routes"]},
+    {"query": "rg -l -i \"trade routes\" data/articles/ | head -30", "results": ["data/articles/ot/ottoman-trade-routes.txt", "data/articles/si/silk-road.txt"]},
+    {"query": "rg -l -i \"annealing\" data/articles/ | head -30", "results": ["data/articles/si/simulated-annealing.txt", "data/articles/an/annealing-metallurgy.txt"]}
+  ],
+  "context_snippets": [
+    {"query": "rg -i -m3 -C5 \"cooling\" data/articles/an/annealing-metallurgy.txt", "file": "data/articles/an/annealing-metallurgy.txt", "snippet": "The process involves heating metal above its recrystallization temperature and then cooling it slowly..."}
+  ],
+  "articles_read": [
+    {"path": "data/articles/ot/ottoman-trade-routes.txt", "key_quotes": ["The Ottoman Empire maintained a vast network of caravanserais...", "Trade routes adapted organically to disruption..."]},
+    {"path": "data/articles/an/annealing-metallurgy.txt", "key_quotes": ["Annealing reduces internal stresses by allowing atoms to migrate...", "The cooling rate determines the final crystal structure..."]}
+  ]
+}
+EXEOF
+            ;;
+        biomimetic) cat << 'EXEOF'
+{
+  "searches": [
+    {"query": "rg -l -i \"foraging\" data/articles/ | head -30", "results": ["data/articles/op/optimal-foraging-theory.txt", "data/articles/an/ant-colony.txt"]},
+    {"query": "rg -l -i \"foraging\" data/articles/ | xargs rg -l -i \"colony\\|swarm\\|organism\" | head -10", "results": ["data/articles/an/ant-colony.txt", "data/articles/ho/honeybee.txt"]}
+  ],
+  "context_snippets": [
+    {"query": "rg -i -m3 -C5 \"pheromone\" data/articles/an/ant-colony.txt", "file": "data/articles/an/ant-colony.txt", "snippet": "Ants deposit pheromone proportional to path quality, creating a positive feedback loop..."}
+  ],
+  "articles_read": [
+    {"path": "data/articles/an/ant-colony.txt", "key_quotes": ["Worker ants communicate food source quality through pheromone concentration...", "Evaporation provides natural decay of stale routing information..."]},
+    {"path": "data/articles/op/optimal-foraging-theory.txt", "key_quotes": ["An organism must decide how to allocate foraging effort across patches of varying quality..."]}
+  ]
+}
+EXEOF
+            ;;
+        contrarian) cat << 'EXEOF'
+{
+  "searches": [
+    {"query": "rg -l -i \"load balancer\" data/articles/ | head -30", "results": ["data/articles/lo/load-balancing.txt", "data/articles/ro/round-robin-scheduling.txt"]},
+    {"query": "rg -l -i \"load balancer\" data/articles/ | xargs rg -l -i \"failure\\|flaw\\|limitation\" | head -10", "results": ["data/articles/lo/load-balancing.txt"]},
+    {"query": "rg -l -i \"round robin\" data/articles/ | xargs rg -l -i \"replaced\\|obsolete\\|alternative\" | head -10", "results": ["data/articles/ro/round-robin-scheduling.txt"]}
+  ],
+  "context_snippets": [
+    {"query": "rg -i -m3 -C5 \"failure\" data/articles/lo/load-balancing.txt", "file": "data/articles/lo/load-balancing.txt", "snippet": "Round-robin fails to account for heterogeneous server capacity..."}
+  ],
+  "articles_read": [
+    {"path": "data/articles/lo/load-balancing.txt", "key_quotes": ["Simple algorithms break down under cascading failure conditions...", "The thundering herd problem occurs when..."]}
+  ]
+}
+EXEOF
+            ;;
+        *) cat << 'EXEOF'
+{
+  "searches": [
+    {"query": "rg -l -i \"graceful degradation\" data/articles/ | head -30", "results": ["data/articles/gr/graceful-degradation.txt", "data/articles/ec/ecological-resilience.txt", "data/articles/fa/fault-tolerance.txt"]},
+    {"query": "rg -l -i \"ecological resilience\" data/articles/ | head -20", "results": ["data/articles/ec/ecological-resilience.txt", "data/articles/ho/holling-resilience.txt"]},
+    {"query": "rg -l -i \"resilience\" data/articles/ | xargs rg -l -i \"immune\" | head -10", "results": ["data/articles/im/immune-tolerance.txt"]}
+  ],
+  "context_snippets": [
+    {"query": "rg -i -m3 -C5 \"engineering resilience\" data/articles/ec/ecological-resilience.txt", "file": "data/articles/ec/ecological-resilience.txt", "snippet": "Holling distinguished engineering resilience (bounce back to equilibrium) from ecological resilience (absorb disturbance while maintaining function)..."}
+  ],
+  "articles_read": [
+    {"path": "data/articles/ec/ecological-resilience.txt", "key_quotes": ["Ecological resilience measures the magnitude of disturbance a system can absorb...", "Adaptive capacity allows reorganization after disruption..."]},
+    {"path": "data/articles/im/immune-tolerance.txt", "key_quotes": ["Immune anergy is a state of graduated unresponsiveness...", "T-cells progressively reduce activity rather than shutting down completely..."]}
+  ]
+}
+EXEOF
+            ;;
+    esac
+}
+
 # Build extra Claude CLI flags for a given condition (phase 2 — coding)
 claude_extra_args() {
     local condition="$1"
@@ -99,25 +202,57 @@ retrieval_first_command() {
     esac
 }
 
-# Verify that the retrieval stage actually used tools (num_turns > 1, article refs >= 2)
+# Verify retrieval by checking the manifest file the agent wrote to disk.
+# No regex, no prose parsing — just jq on a real JSON file + filesystem spot-checks.
 verify_retrieval() {
-    local json_file="$1"
-    local num_turns
-    num_turns=$(jq -r '.num_turns // 0' "$json_file" 2>/dev/null || echo "0")
+    local session_file="$1"   # e.g. $outdir/retrieval.json (Claude session output)
+    local manifest_file="$2"  # e.g. $outdir/retrieval_manifest.json (agent-written file)
+    local workdir="$3"        # workspace root (for resolving relative paths)
 
+    # Check 1: session used multiple turns (agent called tools)
+    local num_turns
+    num_turns=$(jq -r '.num_turns // 0' "$session_file" 2>/dev/null || echo "0")
     if [ "$num_turns" -le 1 ]; then
-        return 1  # FAIL — no tool calls
+        echo "    verify: FAIL — num_turns=$num_turns (no tool calls)" >&2
+        return 1
     fi
 
-    # Check for article path references in output
-    local article_count
-    article_count=$(jq -r '.result // ""' "$json_file" 2>/dev/null | grep -oP 'data/articles/[^\s"]+' | sort -u | wc -l)
+    # Check 2: manifest file exists (agent actually called Write)
+    if [ ! -f "$manifest_file" ]; then
+        echo "    verify: FAIL — manifest file not written" >&2
+        return 1
+    fi
+
+    # Check 3: manifest is valid JSON with required structure
+    local article_count search_count
+    article_count=$(jq '.articles_read | length' "$manifest_file" 2>/dev/null) || {
+        echo "    verify: FAIL — manifest is not valid JSON" >&2
+        return 1
+    }
+    search_count=$(jq '.searches | length' "$manifest_file" 2>/dev/null || echo "0")
 
     if [ "$article_count" -lt 2 ]; then
-        return 1  # FAIL — no real articles found
+        echo "    verify: FAIL — articles_read=$article_count (need >= 2)" >&2
+        return 1
     fi
 
-    return 0  # PASS
+    # Check 4: spot-check that listed article paths actually exist on disk
+    local checked=0 found=0
+    while IFS= read -r article_path; do
+        checked=$((checked + 1))
+        if [ -f "$workdir/$article_path" ]; then
+            found=$((found + 1))
+        fi
+        [ "$checked" -ge 3 ] && break
+    done < <(jq -r '.articles_read[].path' "$manifest_file" 2>/dev/null)
+
+    if [ "$found" -eq 0 ]; then
+        echo "    verify: FAIL — none of the first $checked article paths exist on disk" >&2
+        return 1
+    fi
+
+    echo "    verify: PASS — num_turns=$num_turns, searches=$search_count, articles=$article_count, paths_verified=$found/$checked" >&2
+    return 0
 }
 
 # Extract system prompt from agent .md file (everything after YAML frontmatter)
@@ -155,10 +290,15 @@ run_retrieval_stage() {
 
     local retry_prefix=""
     if [ "$is_retry" = "true" ]; then
-        retry_prefix="RETRY: Your previous attempt failed to search the corpus. You MUST execute rg commands. Start with: \`${first_cmd}\`
+        retry_prefix="CRITICAL RETRY: Your previous attempt failed because you did not search the corpus.
+You MUST execute shell commands using the Bash tool. Start immediately with:
+  ${first_cmd}
 
 "
     fi
+
+    local output_example
+    output_example=$(retrieval_output_example "$condition")
 
     local retrieval_prompt="${retry_prefix}You are running in non-interactive mode. Do NOT use AskUserQuestion. Do NOT enter plan mode.
 
@@ -169,7 +309,7 @@ the Wikipedia corpus in data/articles/.
 You MUST NOT generate any analysis, insights, or conclusions. You MUST NOT answer the
 question. You are a search engine, not a researcher.
 
-MANDATORY FIRST STEP — execute this command before anything else:
+MANDATORY FIRST STEP — execute this command using the Bash tool before anything else:
   ${first_cmd}
 
 PROBLEM CONTEXT (for generating search queries only):
@@ -179,23 +319,32 @@ SEARCH STRATEGY:
 ${search_strategy}
 
 YOUR TASK:
-1. Execute the mandatory first command above
-2. Run 8-15 diverse search queries using rg against data/articles/
-3. For each promising result, read context: rg -i -m3 -C5 \"<term>\" <file>
+1. Execute the mandatory first command above using the Bash tool
+2. Run 8-15 diverse search queries using the Bash tool with rg against data/articles/
+3. For each promising result, read context using Bash: rg -i -m3 -C5 \"<term>\" <file>
 4. Cross-reference: when you find something interesting, search for related terms
 5. Read at least 3 full articles using the Read tool
+6. Write your findings to retrieval_manifest.json using the Write tool (see format below)
 
-OUTPUT FORMAT (strictly follow this):
-For each search you ran:
-  QUERY: <the exact rg command you ran>
-  RESULTS: <file paths returned>
-  SNIPPET: <relevant context from the match>
+MANIFEST FORMAT:
+When you are done searching, you MUST write a file called retrieval_manifest.json
+using the Write tool. The file must be valid JSON matching this schema:
 
-For each article you read in full:
-  ARTICLE: <file path>
-  KEY CONTENT: <direct quotes from the article, verbatim>
+${RETRIEVAL_SCHEMA}
 
-Do NOT summarize, analyze, or draw conclusions. Only report what you found."
+EXAMPLE for your condition:
+
+${output_example}
+
+RULES:
+- Every \"query\" must be the exact shell command you executed
+- Every \"results\" must list real file paths returned by that command
+- Every \"path\" in articles_read must be a real file you read with the Read tool
+- Every \"key_quotes\" entry must be verbatim text copied from the article
+- articles_read MUST have at least 3 entries
+- searches MUST have at least 8 entries
+- Do NOT summarize, analyze, or draw conclusions — only report what you found
+- You MUST write retrieval_manifest.json as your final action"
 
     local output_file="$outdir/retrieval.json"
     local stderr_file="$outdir/retrieval_stderr.log"
@@ -223,7 +372,17 @@ Do NOT summarize, analyze, or draw conclusions. Only report what you found."
     echo "  RETRIEVAL $condition — done (${retrieval_duration}s)" >&2
     echo "$retrieval_duration" > "$outdir/retrieval_duration"
 
-    jq -r '.result // ""' "$output_file" 2>/dev/null || echo ""
+    # Copy manifest from workspace to outdir (if the agent wrote it)
+    local manifest_src="$workdir/retrieval_manifest.json"
+    local manifest_dest="$outdir/retrieval_manifest.json"
+    if [ "$is_retry" = "true" ]; then
+        manifest_dest="$outdir/retrieval_manifest_retry.json"
+    fi
+    if [ -f "$manifest_src" ]; then
+        cp "$manifest_src" "$manifest_dest"
+        # Clean up workspace copy so retry doesn't see stale data
+        rm -f "$manifest_src"
+    fi
 }
 
 # Stage B — Synthesis: persona agent that analyzes retrieved documents (Read-only).
@@ -315,27 +474,36 @@ run_research_phase() {
     local research_start
     research_start=$(date +%s)
 
-    local retrieval_text
-    retrieval_text=$(run_retrieval_stage "$problem_spec" "$condition" "$outdir" "$workdir" "$problem_name")
+    run_retrieval_stage "$problem_spec" "$condition" "$outdir" "$workdir" "$problem_name"
 
     local retrieval_retry="false"
-
-    # Verify retrieval produced real results
     local retrieval_file="$outdir/retrieval.json"
-    if ! verify_retrieval "$retrieval_file"; then
+    local manifest_file="$outdir/retrieval_manifest.json"
+
+    # Verify retrieval produced a valid manifest with real article paths
+    if ! verify_retrieval "$retrieval_file" "$manifest_file" "$workdir"; then
         echo "  RETRIEVAL $condition — verification FAILED, retrying..." >&2
         retrieval_retry="true"
-        retrieval_text=$(run_retrieval_stage "$problem_spec" "$condition" "$outdir" "$workdir" "$problem_name" "true")
+        run_retrieval_stage "$problem_spec" "$condition" "$outdir" "$workdir" "$problem_name" "true"
 
-        # Use retry output if it exists, otherwise fall back to original
+        # Use retry outputs
         if [ -f "$outdir/retrieval_retry.json" ]; then
             retrieval_file="$outdir/retrieval_retry.json"
         fi
+        if [ -f "$outdir/retrieval_manifest_retry.json" ]; then
+            manifest_file="$outdir/retrieval_manifest_retry.json"
+        fi
+    fi
+
+    # Read manifest for synthesis input
+    local retrieval_manifest=""
+    if [ -f "$manifest_file" ]; then
+        retrieval_manifest=$(cat "$manifest_file")
     fi
 
     # Stage B: Synthesis
     local research_text
-    research_text=$(run_synthesis_stage "$problem_spec" "$condition" "$outdir" "$workdir" "$retrieval_text")
+    research_text=$(run_synthesis_stage "$problem_spec" "$condition" "$outdir" "$workdir" "$retrieval_manifest")
 
     local research_end
     research_end=$(date +%s)

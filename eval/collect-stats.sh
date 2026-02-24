@@ -63,12 +63,14 @@ for problem_dir in "$RESULTS_DIR"/*/; do
         if [ -f "$research_file" ]; then
             synthesis_cost_usd=$(jq -r '.total_cost_usd // 0' "$research_file" 2>/dev/null || echo "0")
             research_output_tokens=$(jq -r '[.modelUsage[]?.outputTokens // 0] | add // 0' "$research_file" 2>/dev/null || echo "0")
+        fi
 
-            # Count unique article paths mentioned in research output
-            research_result=$(jq -r '.result // ""' "$research_file" 2>/dev/null || echo "")
-            if [ -n "$research_result" ]; then
-                research_articles_found=$(echo "$research_result" | grep -oP 'data/articles/[^\s"]+' | sort -u | wc -l || echo "0")
-            fi
+        # Count articles from manifest file (structured JSON — no regex needed)
+        # Try retry manifest first, fall back to primary
+        manifest_file="$condition_dir/retrieval_manifest_retry.json"
+        [ -f "$manifest_file" ] || manifest_file="$condition_dir/retrieval_manifest.json"
+        if [ -f "$manifest_file" ]; then
+            research_articles_found=$(jq '.articles_read | length' "$manifest_file" 2>/dev/null || echo "0")
         fi
 
         # Research cost = retrieval + synthesis
