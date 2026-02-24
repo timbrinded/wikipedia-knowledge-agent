@@ -65,6 +65,61 @@ research_instruction_for_condition() {
     esac
 }
 
+# Map condition → retrieval search strategy (derived from agent .md "How to Think" sections)
+retrieval_search_strategy() {
+    local condition="$1"
+    case "$condition" in
+        explicit)    echo "Abstract the problem. Search for structural patterns across domains: ecology, physics, economics, history. Follow surprising connections." ;;
+        reflective)  echo "Search for historical precedent: prior attempts, failures, evolution of approaches. Search for proportionality comparisons." ;;
+        flaneur)     echo "Pick random articles with shuf. Follow curiosity, not relevance. Read 3-5 full articles." ;;
+        consilience) echo "Search for the abstract pattern across 5+ independent domains. Look for convergent solutions." ;;
+        biomimetic)  echo "Reframe the problem biologically. Search ONLY in ecology, evolution, neuroscience, immunology, ethology, botany, mycology." ;;
+        contrarian)  echo "Name the obvious approach. Search for its failures, limitations, documented anti-patterns." ;;
+        *)           echo "" ;;
+    esac
+}
+
+# Derive a seed search term from the problem filename
+seed_term_from_problem_name() {
+    local problem_name="$1"
+    # Strip leading number prefix (e.g., "01-") and replace hyphens with spaces
+    echo "$problem_name" | sed 's/^[0-9]*-//' | tr '-' ' '
+}
+
+# Map (condition, problem_name) → mandatory first command for retrieval stage
+retrieval_first_command() {
+    local condition="$1"
+    local problem_name="$2"
+    local seed_term
+    seed_term=$(seed_term_from_problem_name "$problem_name")
+
+    case "$condition" in
+        flaneur) echo "shuf -n 1 data/index/titles.txt" ;;
+        *)       echo "rg -l -i \"${seed_term}\" data/articles/ | head -30" ;;
+    esac
+}
+
+# Verify that the retrieval stage actually used tools (num_turns > 1, article refs >= 2)
+verify_retrieval() {
+    local json_file="$1"
+    local num_turns
+    num_turns=$(jq -r '.num_turns // 0' "$json_file" 2>/dev/null || echo "0")
+
+    if [ "$num_turns" -le 1 ]; then
+        return 1  # FAIL — no tool calls
+    fi
+
+    # Check for article path references in output
+    local article_count
+    article_count=$(jq -r '.result // ""' "$json_file" 2>/dev/null | grep -oP 'data/articles/[^\s"]+' | sort -u | wc -l)
+
+    if [ "$article_count" -lt 2 ]; then
+        return 1  # FAIL — no real articles found
+    fi
+
+    return 0  # PASS
+}
+
 # Extract system prompt from agent .md file (everything after YAML frontmatter)
 extract_agent_system_prompt() {
     local agent_file="$1"
@@ -81,14 +136,105 @@ condition_has_research() {
     esac
 }
 
-# Run the research phase for a wiki condition.
-# Produces $outdir/research.json with the raw output.
-# Returns the research text via stdout (caller captures it).
-run_research_phase() {
+# Stage A — Retrieval: search-only agent that produces a manifest of queries + articles.
+# Outputs $outdir/retrieval.json (or retrieval_retry.json on retry).
+# Returns the retrieval manifest text via stdout.
+run_retrieval_stage() {
     local problem_spec="$1"
     local condition="$2"
     local outdir="$3"
     local workdir="$4"
+    local problem_name="$5"
+    local is_retry="${6:-}"
+
+    local first_cmd
+    first_cmd=$(retrieval_first_command "$condition" "$problem_name")
+
+    local search_strategy
+    search_strategy=$(retrieval_search_strategy "$condition")
+
+    local retry_prefix=""
+    if [ "$is_retry" = "true" ]; then
+        retry_prefix="RETRY: Your previous attempt failed to search the corpus. You MUST execute rg commands. Start with: \`${first_cmd}\`
+
+"
+    fi
+
+    local retrieval_prompt="${retry_prefix}You are running in non-interactive mode. Do NOT use AskUserQuestion. Do NOT enter plan mode.
+
+You are a corpus search tool. You have NO knowledge of any topic. You cannot answer
+questions or analyze problems. Your ONLY capability is executing search commands against
+the Wikipedia corpus in data/articles/.
+
+You MUST NOT generate any analysis, insights, or conclusions. You MUST NOT answer the
+question. You are a search engine, not a researcher.
+
+MANDATORY FIRST STEP — execute this command before anything else:
+  ${first_cmd}
+
+PROBLEM CONTEXT (for generating search queries only):
+${problem_spec}
+
+SEARCH STRATEGY:
+${search_strategy}
+
+YOUR TASK:
+1. Execute the mandatory first command above
+2. Run 8-15 diverse search queries using rg against data/articles/
+3. For each promising result, read context: rg -i -m3 -C5 \"<term>\" <file>
+4. Cross-reference: when you find something interesting, search for related terms
+5. Read at least 3 full articles using the Read tool
+
+OUTPUT FORMAT (strictly follow this):
+For each search you ran:
+  QUERY: <the exact rg command you ran>
+  RESULTS: <file paths returned>
+  SNIPPET: <relevant context from the match>
+
+For each article you read in full:
+  ARTICLE: <file path>
+  KEY CONTENT: <direct quotes from the article, verbatim>
+
+Do NOT summarize, analyze, or draw conclusions. Only report what you found."
+
+    local output_file="$outdir/retrieval.json"
+    local stderr_file="$outdir/retrieval_stderr.log"
+    if [ "$is_retry" = "true" ]; then
+        output_file="$outdir/retrieval_retry.json"
+        stderr_file="$outdir/retrieval_retry_stderr.log"
+    fi
+
+    echo "  RETRIEVAL $condition — starting retrieval stage${is_retry:+ (retry)}..." >&2
+    local retrieval_start
+    retrieval_start=$(date +%s)
+
+    (cd "$workdir" && \
+    CLAUDECODE= $CLAUDE_CMD -p "$retrieval_prompt" \
+        --dangerously-skip-permissions \
+        --output-format json \
+        > "$output_file" \
+        2> "$stderr_file" \
+        || true)
+
+    local retrieval_end
+    retrieval_end=$(date +%s)
+    local retrieval_duration=$(( retrieval_end - retrieval_start ))
+
+    echo "  RETRIEVAL $condition — done (${retrieval_duration}s)" >&2
+    echo "$retrieval_duration" > "$outdir/retrieval_duration"
+
+    jq -r '.result // ""' "$output_file" 2>/dev/null || echo ""
+}
+
+# Stage B — Synthesis: persona agent that analyzes retrieved documents (Read-only).
+# Outputs $outdir/research.json (same name as before — downstream unchanged).
+# Returns the research text via stdout.
+run_synthesis_stage() {
+    local problem_spec="$1"
+    local condition="$2"
+    local outdir="$3"
+    local workdir="$4"
+    local retrieval_manifest="$5"
 
     local agent_file
     agent_file=$(agent_file_for_condition "$condition")
@@ -103,52 +249,108 @@ run_research_phase() {
     local research_instruction
     research_instruction=$(research_instruction_for_condition "$condition")
 
-    local research_prompt="You are running in non-interactive mode. Do NOT use AskUserQuestion. Do NOT enter plan mode. Do NOT write any code.
-
-You are a Wikipedia research agent. Your ONLY job is to search the local Wikipedia corpus and produce structured research findings.
+    local synthesis_prompt="You are running in non-interactive mode. Do NOT use AskUserQuestion. Do NOT enter plan mode.
+Do NOT write any code.
 
 ${agent_system_prompt}
 
 ---
 
-PROBLEM TO RESEARCH:
+RETRIEVED DOCUMENTS:
+The following articles and passages were found by searching the Wikipedia corpus.
+These are your ONLY source of information. Do NOT introduce facts, algorithms, or
+concepts that are not present in the retrieved articles below.
+
+${retrieval_manifest}
+
+---
+
+PROBLEM TO ANALYZE:
 ${problem_spec}
 
 ---
 
 INSTRUCTIONS:
 1. ${research_instruction}
-2. Search the Wikipedia corpus in data/articles/ using grep patterns and file reads
-3. Read relevant articles deeply
+2. You may use the Read tool to read any of the article files listed above in full
+3. Base your findings ONLY on the retrieved documents
 4. Produce structured findings following your Output Shape format
-5. Do NOT write any implementation code — only research findings"
+5. For every claim, cite the specific article file path"
 
-    echo "  RESEARCH $condition — starting research phase..." >&2
+    echo "  SYNTHESIS $condition — starting synthesis stage..." >&2
+    local synthesis_start
+    synthesis_start=$(date +%s)
+
+    (cd "$workdir" && \
+    CLAUDECODE= $CLAUDE_CMD -p "$synthesis_prompt" \
+        --dangerously-skip-permissions \
+        --tools "Read" \
+        --output-format json \
+        > "$outdir/research.json" \
+        2> "$outdir/synthesis_stderr.log" \
+        || true)
+
+    local synthesis_end
+    synthesis_end=$(date +%s)
+    local synthesis_duration=$(( synthesis_end - synthesis_start ))
+
+    echo "  SYNTHESIS $condition — done (${synthesis_duration}s)" >&2
+    echo "$synthesis_duration" > "$outdir/synthesis_duration"
+
+    jq -r '.result // ""' "$outdir/research.json" 2>/dev/null || echo ""
+}
+
+# Run the full research pipeline: retrieval → verify → synthesis.
+# Produces $outdir/research.json with the final research findings.
+# Returns the research text via stdout (caller captures it).
+run_research_phase() {
+    local problem_spec="$1"
+    local condition="$2"
+    local outdir="$3"
+    local workdir="$4"
+    local problem_name="$5"
+
+    # Stage A: Retrieval
+    echo "  RESEARCH $condition — starting research phase (retrieval → synthesis)..." >&2
     local research_start
     research_start=$(date +%s)
 
-    # Run research agent standalone — no --plugin-dir (just Bash/Read/Glob access)
-    (cd "$workdir" && \
-    CLAUDECODE= $CLAUDE_CMD -p "$research_prompt" \
-        --dangerously-skip-permissions \
-        --output-format json \
-        > "$outdir/research.json" \
-        2> "$outdir/research_stderr.log" \
-        || true)
+    local retrieval_text
+    retrieval_text=$(run_retrieval_stage "$problem_spec" "$condition" "$outdir" "$workdir" "$problem_name")
+
+    local retrieval_retry="false"
+
+    # Verify retrieval produced real results
+    local retrieval_file="$outdir/retrieval.json"
+    if ! verify_retrieval "$retrieval_file"; then
+        echo "  RETRIEVAL $condition — verification FAILED, retrying..." >&2
+        retrieval_retry="true"
+        retrieval_text=$(run_retrieval_stage "$problem_spec" "$condition" "$outdir" "$workdir" "$problem_name" "true")
+
+        # Use retry output if it exists, otherwise fall back to original
+        if [ -f "$outdir/retrieval_retry.json" ]; then
+            retrieval_file="$outdir/retrieval_retry.json"
+        fi
+    fi
+
+    # Stage B: Synthesis
+    local research_text
+    research_text=$(run_synthesis_stage "$problem_spec" "$condition" "$outdir" "$workdir" "$retrieval_text")
 
     local research_end
     research_end=$(date +%s)
     local research_duration=$(( research_end - research_start ))
 
-    echo "  RESEARCH $condition — done (${research_duration}s)" >&2
-
-    # Extract the result text from the JSON output
-    local research_text
-    research_text=$(jq -r '.result // ""' "$outdir/research.json" 2>/dev/null || echo "")
-
-    # Write duration to a file so the caller can read it
-    # (command substitution runs in a subshell, so env vars don't propagate)
+    # Write metadata for caller
     echo "$research_duration" > "$outdir/research_duration"
+    echo "$retrieval_retry" > "$outdir/retrieval_retry_flag"
+
+    # Extract retrieval turns for meta.json
+    local retrieval_turns
+    retrieval_turns=$(jq -r '.num_turns // 0' "$retrieval_file" 2>/dev/null || echo "0")
+    echo "$retrieval_turns" > "$outdir/retrieval_turns"
+
+    echo "  RESEARCH $condition — done (${research_duration}s, retrieval_turns=${retrieval_turns}, retry=${retrieval_retry})" >&2
 
     echo "$research_text"
 }
@@ -269,7 +471,7 @@ $(cat "$contract_dir/README.md")"
     local research_text=""
     local research_duration=0
     if condition_has_research "$condition"; then
-        research_text=$(run_research_phase "$prompt" "$condition" "$outdir" "$workdir")
+        research_text=$(run_research_phase "$prompt" "$condition" "$outdir" "$workdir" "$problem_name")
         research_duration=$(cat "$outdir/research_duration" 2>/dev/null || echo "0")
     fi
 
@@ -326,7 +528,11 @@ Use these findings to inform your design. Reference specific concepts where they
     local extra_args
     extra_args=$(claude_extra_args "$condition" "$workdir")
 
-    echo "  RUN  $problem_name/$condition (coding phase)"
+    if [ "$research_duration" -gt 0 ]; then
+        echo "  RUN  $problem_name/$condition (coding phase — research took ${research_duration}s)"
+    else
+        echo "  RUN  $problem_name/$condition"
+    fi
     local code_start
     code_start=$(date +%s)
 
@@ -347,11 +553,25 @@ Use these findings to inform your design. Reference specific concepts where they
     local code_duration=$(( code_end - code_start ))
     local total_duration=$(( research_duration + code_duration ))
 
+    # Read retrieval metadata (written by run_research_phase)
+    local retrieval_turns
+    retrieval_turns=$(cat "$outdir/retrieval_turns" 2>/dev/null || echo "0")
+    local retrieval_retry
+    retrieval_retry=$(cat "$outdir/retrieval_retry_flag" 2>/dev/null || echo "false")
+    local retrieval_duration
+    retrieval_duration=$(cat "$outdir/retrieval_duration" 2>/dev/null || echo "0")
+    local synthesis_duration
+    synthesis_duration=$(cat "$outdir/synthesis_duration" 2>/dev/null || echo "0")
+
     # Record metadata
     cat > "$outdir/meta.json" << METAEOF
 {
     "problem": "$problem_name",
     "condition": "$condition",
+    "retrieval_duration_seconds": $retrieval_duration,
+    "retrieval_retry": $retrieval_retry,
+    "retrieval_turns": $retrieval_turns,
+    "synthesis_duration_seconds": $synthesis_duration,
     "research_duration_seconds": $research_duration,
     "code_duration_seconds": $code_duration,
     "total_duration_seconds": $total_duration,

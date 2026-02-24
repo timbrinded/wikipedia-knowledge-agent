@@ -19,7 +19,7 @@ STATS_FILE="$RESULTS_DIR/stats.tsv"
 echo "=== Collecting experiment statistics ==="
 
 # Header
-printf "problem\tcondition\ttotal_duration_s\tresearch_duration_s\tcode_duration_s\ttotal_cost_usd\tresearch_cost_usd\tcode_cost_usd\tresearch_output_tokens\tresearch_articles_found\tturns\tlines_of_code\tinput_tokens\toutput_tokens\n" > "$STATS_FILE"
+printf "problem\tcondition\ttotal_duration_s\tresearch_duration_s\tcode_duration_s\ttotal_cost_usd\tresearch_cost_usd\tcode_cost_usd\tresearch_output_tokens\tresearch_articles_found\tretrieval_turns\tretrieval_retry\tsynthesis_duration_s\tturns\tlines_of_code\tinput_tokens\toutput_tokens\n" > "$STATS_FILE"
 
 for problem_dir in "$RESULTS_DIR"/*/; do
     problem=$(basename "$problem_dir")
@@ -37,13 +37,31 @@ for problem_dir in "$RESULTS_DIR"/*/; do
         research_duration=$(jq -r '.research_duration_seconds // 0' "$condition_dir/meta.json" 2>/dev/null || echo "0")
         code_duration=$(jq -r '.code_duration_seconds // .duration_seconds // 0' "$condition_dir/meta.json" 2>/dev/null || echo "0")
 
-        # --- Research phase metrics (from research.json) ---
+        # --- Retrieval stage metrics ---
+        retrieval_file="$condition_dir/retrieval.json"
+        retrieval_turns=0
+        retrieval_retry=0
+        retrieval_cost_usd=0
+        synthesis_duration=0
+        if [ -f "$retrieval_file" ]; then
+            retrieval_turns=$(jq -r '.num_turns // 0' "$retrieval_file" 2>/dev/null || echo "0")
+            retrieval_cost_usd=$(jq -r '.total_cost_usd // 0' "$retrieval_file" 2>/dev/null || echo "0")
+        fi
+        if [ -f "$condition_dir/retrieval_retry.json" ]; then
+            retrieval_retry=1
+            # Add retry cost
+            retry_cost=$(jq -r '.total_cost_usd // 0' "$condition_dir/retrieval_retry.json" 2>/dev/null || echo "0")
+            retrieval_cost_usd=$(awk "BEGIN {printf \"%.6f\", $retrieval_cost_usd + $retry_cost}" 2>/dev/null || echo "$retrieval_cost_usd")
+        fi
+        synthesis_duration=$(jq -r '.synthesis_duration_seconds // 0' "$condition_dir/meta.json" 2>/dev/null || echo "0")
+
+        # --- Research phase metrics (from research.json = synthesis output) ---
         research_file="$condition_dir/research.json"
-        research_cost_usd=0
+        synthesis_cost_usd=0
         research_output_tokens=0
         research_articles_found=0
         if [ -f "$research_file" ]; then
-            research_cost_usd=$(jq -r '.total_cost_usd // 0' "$research_file" 2>/dev/null || echo "0")
+            synthesis_cost_usd=$(jq -r '.total_cost_usd // 0' "$research_file" 2>/dev/null || echo "0")
             research_output_tokens=$(jq -r '[.modelUsage[]?.outputTokens // 0] | add // 0' "$research_file" 2>/dev/null || echo "0")
 
             # Count unique article paths mentioned in research output
@@ -52,6 +70,9 @@ for problem_dir in "$RESULTS_DIR"/*/; do
                 research_articles_found=$(echo "$research_result" | grep -oP 'data/articles/[^\s"]+' | sort -u | wc -l || echo "0")
             fi
         fi
+
+        # Research cost = retrieval + synthesis
+        research_cost_usd=$(awk "BEGIN {printf \"%.6f\", $retrieval_cost_usd + $synthesis_cost_usd}" 2>/dev/null || echo "$synthesis_cost_usd")
 
         # --- Code phase metrics (from output.json) ---
         output_file="$condition_dir/output.json"
@@ -79,10 +100,11 @@ for problem_dir in "$RESULTS_DIR"/*/; do
             lines_of_code=0
         fi
 
-        printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+        printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
             "$problem" "$condition" "$total_duration" "$research_duration" "$code_duration" \
             "$total_cost_usd" "$research_cost_usd" "$code_cost_usd" \
             "$research_output_tokens" "$research_articles_found" \
+            "$retrieval_turns" "$retrieval_retry" "$synthesis_duration" \
             "$turns" "$lines_of_code" "$input_tokens" "$output_tokens" \
             >> "$STATS_FILE"
     done
